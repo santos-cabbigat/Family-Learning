@@ -5,7 +5,7 @@ Source: https://github.com/santos-cabbigat/Family-Learning
 
 The GitHub Actions workflow tests and publishes `docs/`. No purchased workbook or learner records belong in this repository.
 
-## Current edition 0.3.1
+## Current edition 0.3.2
 
 - Phonics A private pack: one activity per card, hidden teacher guidance, workbook page reference, manual stopping point, separate scores and attempt history per child.
 - Local records and packs use separate IndexedDB databases. Updates preserve both.
@@ -38,3 +38,8 @@ New browser installations contain only placeholder student profiles, no purchase
 The Sync screen can separately upload installed lesson pack ZIPs and list/download packs created by this app in the connected account. Pack uploads verify SHA-256 and size; record uploads verify the complete JSON. These are user-triggered operations. No real Google account has been tested without an OAuth client. Purchased K5 workbooks must not be redistributed outside their permitted license; recipients need their own licensed material or publisher permission.
 
 Settings now separates the family Connect Google Drive button from the collapsed App owner setup section. Connecting alone never uploads records. Each family chooses its own account, then uses Backup and restore. Check connection setup reloads the published configuration without requiring an app reinstall. A local client ID override is only for testing or separately hosted copies, not the normal family setup.
+
+
+## Mobile settings update
+
+The primary menu is Today, Subjects, Progress and Settings. Sync is under Settings → Backup and restore. Existing #sync links still work. Settings opens a grouped list; students, Google Drive, reminders, updates and offline access each have their own screen. Create remains in Today and the materials library; individual learning plans remain in Today and Settings. The Google connection button now checks setup and reports missing configuration instead of remaining disabled. Google sign-in still requires the owner-provided Web client ID in docs/config.json; this release does not claim real-account sync is configured.

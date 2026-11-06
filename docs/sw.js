@@ -1,4 +1,4 @@
-const CACHE='family-learning-0.3.1-drive-settings';
+const CACHE='family-learning-0.3.2-phone-settings';
 const BASE=new URL('./',self.location).pathname;
 const ASSETS=['','index.html','style.css','app.js','core.js','store.js','drive.js','install.js','manifest.webmanifest','icon.svg','icon-192.png','icon-512.png','config.json','release.js','students.js','lessons.js','learning-core.js','lesson-store.js','lessons.css','vendor/fflate.js'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS.map(p=>new Request(BASE+p,{cache:"reload"}))))));
@@ -8,3 +8,4 @@ self.addEventListener('fetch',event=>{const url=new URL(event.request.url);if(ev
  if(event.request.mode==='navigate'){event.respondWith(caches.open(CACHE).then(cache=>cache.match(BASE+'index.html')).then(cached=>cached||fetch(event.request)));return;}
  if(ASSETS.some(p=>url.pathname===BASE+p))event.respondWith(caches.open(CACHE).then(cache=>cache.match(event.request,{ignoreSearch:true})).then(cached=>cached||fetch(event.request)));
 });
+

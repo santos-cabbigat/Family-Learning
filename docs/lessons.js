@@ -66,7 +66,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
   function installPanel() {
     return '<article class="card pack-setup"><h2>Add a lesson pack</h2>' +
       '<p>The app comes without purchased workbooks. Choose a prepared Family Learning ZIP from your files, or download a pack you previously backed up to your own Google Drive.</p>' +
-      '<div class="actions">'+button('choose-pack', 'Open lesson pack', true)+'<a class="btn" href="#sync">My Drive lesson packs</a></div>' +
+      '<div class="actions">'+button('choose-pack', 'Open lesson pack', true)+'<a class="btn" href="#settings/backup">My Drive lesson packs</a></div>' +
       '<p class="muted">Import once per device for offline use. Your scores are separate from the pack. Use materials you own or have permission to use.</p></article>';
   }
   async function subjects() {
@@ -356,3 +356,4 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
   }
   return { reset, subjects, subject, level, player, progress };
 }
+
