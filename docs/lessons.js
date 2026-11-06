@@ -41,11 +41,16 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     input.type = 'file';
     input.accept = '.zip,application/zip';
     input.setAttribute('aria-label', 'Choose lesson pack ZIP');
+    input.hidden = true;
+    document.body.append(input);
+    input.addEventListener('cancel', () => input.remove(), { once: true });
     input.onchange = async () => {
-      if (!input.files[0]) return;
+      const file = input.files[0];
+      input.remove();
+      if (!file) return;
       dialog('<h2>Opening Level A</h2><p role="status">Checking the cards and saving them for use on this device…</p>');
       try {
-        const manifest = await importPack(input.files[0]);
+        const manifest = await importPack(file);
         closeDialog();
         toast('Lesson pack ready on this device.');
         if (location.hash === '#level/' + manifest.id) await level(manifest.id);

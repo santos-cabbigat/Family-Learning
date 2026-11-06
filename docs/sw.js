@@ -1,4 +1,4 @@
-const CACHE='family-learning-0.2.0-levela-fit';
+const CACHE='family-learning-0.2.1-levela-fit';
 const BASE=new URL('./',self.location).pathname;
 const ASSETS=['','index.html','style.css','app.js','core.js','store.js','drive.js','install.js','manifest.webmanifest','icon.svg','icon-192.png','icon-512.png','config.json','lessons.js','learning-core.js','lesson-store.js','lessons.css','vendor/fflate.js'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS.map(p=>BASE+p)))));
