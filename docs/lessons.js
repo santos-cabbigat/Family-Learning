@@ -2,6 +2,7 @@ import {GRADES,activeStudents,materialGrade} from './students.js';
 import { record, latestProfiles } from './core.js';
 import { SUBJECTS, latestStop, chapterProgress } from './learning-core.js';
 import { getPack, listPacks, importPack } from './lesson-store.js';
+import {mountDownloads} from './package-catalog.js';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -82,6 +83,8 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       }).join('') + '</div><div class="actions lesson-secondary"><a class="btn" href="#library">Other teaching materials</a><a class="btn" href="#learning-progress">View progress</a>'+button('choose-pack','Open lesson pack')+'</div>';
     listen(query('#choose-pack'),'click',choosePack);
     listen(query('#grade-filter'),'change',e=>{gradeFilter=e.target.value;subjects();});
+    mountDownloads(main,()=>{});
+
   }
   async function subject(name) {
     const version = reset();
