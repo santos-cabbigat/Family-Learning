@@ -1,6 +1,6 @@
 import {validateLearningRecord} from './learning-core.js';
 export const SCHEMA=1;
-export const VERSION='0.2.1';
+export const VERSION='0.2.2';
 export const uid=()=>{if(crypto.randomUUID)return crypto.randomUUID();const b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;const h=[...b].map(v=>v.toString(16).padStart(2,'0')).join('');return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;};
 export function record(kind,data){return {id:uid(),kind,createdAt:new Date().toISOString(),...data};}
 export function envelope(workspaceId,records,deviceId){return {app:'family-learning',schema:SCHEMA,workspaceId,deviceId,exportedAt:new Date().toISOString(),records};}
