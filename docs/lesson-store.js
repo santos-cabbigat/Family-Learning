@@ -1,4 +1,4 @@
-import { unzip } from './vendor/fflate.js';
+import { unzip, zip } from './vendor/fflate.js';
 import { validatePack } from './learning-core.js';
 
 let connection;
@@ -7,7 +7,8 @@ function database() {
     const request = indexedDB.open('family-learning-materials', 1);
     request.onupgradeneeded = () => request.result.createObjectStore('packs', { keyPath: 'id' });
     request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    request.onerror = () => { connection=undefined; reject(request.error); };
+    request.onblocked = () => { connection=undefined; reject(new Error('Close other Family Learning tabs and retry.')); };
   });
   return connection;
 }
@@ -44,7 +45,7 @@ export async function importPack(file) {
   if (total > 180 * 1024 * 1024) throw new Error('This lesson pack expands beyond the supported size.');
   let manifest;
   try { manifest = JSON.parse(new TextDecoder().decode(files['manifest.json'])); }
-  catch { throw new Error('Choose the prepared Phonics A Lesson Pack ZIP.'); }
+  catch { throw new Error('Choose a prepared Family Learning lesson pack ZIP. A workbook PDF alone is not a lesson pack.'); }
   validatePack(manifest, files);
   const assets = {};
   for (const [path, value] of Object.entries(files)) {
@@ -56,10 +57,18 @@ export async function importPack(file) {
   const db = await database();
   await new Promise((resolve, reject) => {
     const tx = db.transaction('packs', 'readwrite');
-    tx.objectStore('packs').put({ id: manifest.id, manifest, assets });
+    tx.objectStore('packs').put({ id: manifest.id, manifest, assets, sourceZip: new Blob([bytes],{type:'application/zip'}) });
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error || new Error('This device could not store the lesson pack.'));
   });
   return manifest;
+}
+
+export async function exportPack(id) {
+ const pack=await getPack(id);if(!pack)throw new Error('Import this lesson pack on the device first.');
+ if(pack.sourceZip)return pack.sourceZip;
+ const files={'manifest.json':new TextEncoder().encode(JSON.stringify(pack.manifest))};
+ for(const [path,blob] of Object.entries(pack.assets))files[path]=new Uint8Array(await blob.arrayBuffer());
+ return new Promise((resolve,reject)=>zip(files,{level:0},(error,data)=>error?reject(error):resolve(new Blob([data],{type:'application/zip'}))));
 }

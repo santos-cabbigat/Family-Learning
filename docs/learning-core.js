@@ -15,7 +15,7 @@ export function chapterProgress(records, childId, materialId, chapterId, target 
   if (latest) {
     status = 'In progress';
     if (latest.complete) status = percentage === null ? 'Awaiting score' : 'Needs practice';
-    if (latest.complete && percentage !== null && percentage >= target) status = 'Mastered';
+    if (latest.complete && percentage !== null && (latest.earned / latest.total * 100) >= target) status = 'Mastered';
   }
   return { attempts, latest, percentage, status, mastered: status === 'Mastered' };
 }

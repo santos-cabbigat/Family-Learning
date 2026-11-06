@@ -1,8 +1,8 @@
+import {GRADES,activeStudents,materialGrade} from './students.js';
 import { record, latestProfiles } from './core.js';
 import { SUBJECTS, latestStop, chapterProgress } from './learning-core.js';
 import { getPack, listPacks, importPack } from './lesson-store.js';
 
-const PACK_FOLDER = 'https://drive.google.com/file/d/1RlwxP5C1SaKV781_bqMzQYy_n5DT6Kk2/view?usp=drivesdk';
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const button = (id, label, primary = false) => '<button class="btn' + (primary ? ' primary' : '') + '" id="' + id + '">' + label + '</button>';
@@ -14,7 +14,11 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
   let pictureUrl;
   let routeVersion = 0;
   const query = selector => main.querySelector(selector);
-  const people = () => latestProfiles(getState().records);
+  const people = () => activeStudents(getState().records);
+  let gradeFilter='All grades';
+  const grades=()=>['All grades',...GRADES,'Unassigned'];
+  const gradeControl=()=>'<label class="chapter-search">Grade level<select id="grade-filter">'+grades().map(g=>'<option'+(g===gradeFilter?' selected':'')+'>'+g+'</option>').join('')+'</select></label>';
+  const matchesGrade=p=>gradeFilter==='All grades'||materialGrade(getState().records,p)===gradeFilter;
   const target = () => getState().settings.masteryTarget ?? 80;
 
   function reset() {
@@ -48,7 +52,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       const file = input.files[0];
       input.remove();
       if (!file) return;
-      dialog('<h2>Opening Level A</h2><p role="status">Checking the cards and saving them for use on this device…</p>');
+      dialog('<h2>Opening lesson pack</h2><p role="status">Checking the cards and saving them for use on this device…</p>');
       try {
         const manifest = await importPack(file);
         closeDialog();
@@ -60,40 +64,45 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     input.click();
   }
   function installPanel() {
-    return '<article class="card pack-setup"><h2>Open your Phonics A lesson pack</h2>' +
-      '<p>Download <strong>Phonics-A-Lesson-Pack.zip</strong> from your Level A folder, then choose it here. The cards will be available offline on this device.</p>' +
-      '<div class="actions"><a class="btn" target="_blank" rel="noopener" href="' + PACK_FOLDER + '">Download from Google Drive</a>' +
-      button('choose-pack', 'Open lesson pack', true) + '</div>' +
-      '<p class="muted">This is a one-time import on each device. Scores and stopping points are included in your exported learning backup. Keep the ZIP for another device.</p></article>';
+    return '<article class="card pack-setup"><h2>Add a lesson pack</h2>' +
+      '<p>The app comes without purchased workbooks. Choose a prepared Family Learning ZIP from your files, or download a pack you previously backed up to your own Google Drive.</p>' +
+      '<div class="actions">'+button('choose-pack', 'Open lesson pack', true)+'<a class="btn" href="#sync">My Drive lesson packs</a></div>' +
+      '<p class="muted">Import once per device for offline use. Your scores are separate from the pack. Use materials you own or have permission to use.</p></article>';
   }
   async function subjects() {
     const version = reset();
     loading();
     const packs = await listPacks();
     if (version !== routeVersion) return;
-    main.innerHTML = title('Learning subjects', 'Choose a subject, then a level.') +
+    main.innerHTML = title('Learning subjects', 'Choose a grade, subject, then a material level.') + gradeControl() +
       '<div class="subject-grid">' + SUBJECTS.map(subject => {
-        const count = packs.filter(p => p.subject === subject).length;
+        const count = packs.filter(p => p.subject === subject&&matchesGrade(p)).length;
         return '<a class="card subject-tile" href="#subject/' + encodeURIComponent(subject) + '"><h2>' + subject +
           '</h2><p class="muted">' + (count ? count + ' level ready' : subject === 'Phonics' ? 'Level A lesson pack' : 'Your materials') + '</p><span aria-hidden="true">→</span></a>';
-      }).join('') + '</div><div class="actions lesson-secondary"><a class="btn" href="#library">Other teaching materials</a><a class="btn" href="#learning-progress">View progress</a></div>';
+      }).join('') + '</div><div class="actions lesson-secondary"><a class="btn" href="#library">Other teaching materials</a><a class="btn" href="#learning-progress">View progress</a>'+button('choose-pack','Open lesson pack')+'</div>';
+    listen(query('#choose-pack'),'click',choosePack);
+    listen(query('#grade-filter'),'change',e=>{gradeFilter=e.target.value;subjects();});
   }
   async function subject(name) {
     const version = reset();
     loading();
     const packs = await listPacks();
     if (version !== routeVersion) return;
-    const matching = packs.filter(p => p.subject === name);
-    main.innerHTML = '<a class="text-link" href="#subjects">All subjects</a>' + title(name, 'Choose a level to teach or review.') +
+    const matching = packs.filter(p => p.subject === name&&matchesGrade(p));
+    const aliases={'Mathematics':'Math','Reading comprehension':'Reading Comprehension','Phonetics':'Phonics'};
+    const resources=getState().records.filter(r=>r.kind==='course'&&(aliases[r.subject]||r.subject).toLowerCase()===name?.toLowerCase()&&(gradeFilter==='All grades'||(r.grade||'Unassigned')===gradeFilter));
+    main.innerHTML = '<a class="text-link" href="#subjects">All subjects</a>' + title(name, 'Choose a level to teach or review.') + gradeControl() +
       '<div class="grid">' + matching.map(p => '<a class="card subject-tile" href="#level/' + p.id +
         '"><h2>' + escape(p.level) + '</h2><p>' + escape(p.title) + '</p><p class="muted">' +
         p.chapters.length + ' chapters · Ready on this device</p></a>').join('') + '</div>';
-    if (name === 'Phonics' && !matching.some(p => p.id === 'k5-phonics-a')) {
+    if(resources.length) main.innerHTML += '<h2 class="lesson-secondary">Teaching materials</h2><div class="grid">'+resources.map(r=>'<a class="card subject-tile" href="#book/'+encodeURIComponent(r.id)+'"><h3>'+escape(r.title)+'</h3><p>'+escape(r.level)+'</p></a>').join('')+'</div>';
+    if (!packs.some(p=>p.subject===name)) {
       main.innerHTML += installPanel();
       listen(query('#choose-pack'), 'click', choosePack);
-    } else if (!matching.length) {
+    } else if (!matching.length && !resources.length) {
       main.innerHTML += '<div class="empty">This subject is ready for its learning materials.</div><a class="btn" href="#library">Browse existing materials</a>';
     }
+    listen(query('#grade-filter'),'change',e=>{gradeFilter=e.target.value;subject(name);});
   }
   async function level(id) {
     const version = reset();
@@ -102,7 +111,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     if (version !== routeVersion) return;
     activePack = loaded;
     if (!activePack) {
-      main.innerHTML = title('Phonics · Level A', 'Your private workbook, divided into teaching cards.') + installPanel();
+      main.innerHTML = title('Lesson pack needed', 'Import this material before opening its cards.') + installPanel();
       listen(query('#choose-pack'), 'click', choosePack);
       return;
     }
@@ -113,7 +122,8 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     const resume = savedCard ? '#lesson/' + id + '/' + savedChapter.id + '/' + savedCard.id :
       '#lesson/' + id + '/' + m.chapters[0].id;
     main.innerHTML = '<a class="text-link" href="#subject/' + encodeURIComponent(m.subject) + '">' + escape(m.subject) + '</a>' +
-      title(m.title, m.level + ' · K5 Learning') +
+      title(m.title, m.level + ' · '+materialGrade(getState().records,m)) +
+      '<div class="actions lesson-secondary"><label>Material grade<select id="material-grade"><option value="">Choose grade</option>'+GRADES.map(g=>'<option'+(materialGrade(getState().records,m)===g?' selected':'')+'>'+g+'</option>').join('')+'</select></label>'+button('save-material-grade','Save grade')+'</div>' +
       '<div class="resume-card"><div><h2>' + (savedCard ? 'Continue your lesson' : 'Begin teaching') + '</h2><p>' +
       (savedCard ? escape(savedChapter.title) + ' · Workbook page ' + savedCard.page + ' · ' + escape(savedCard.label) :
         'Open a chapter and present one activity at a time.') + '</p></div><a class="btn primary" href="' + resume + '">' +
@@ -122,6 +132,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       '<p class="muted">Parent teaching view · You can open any chapter. Each child’s next step is based on their own completed work and score.</p>' +
       '<label class="chapter-search">Find a sound or page<input id="find-chapter" type="search" placeholder="For example, short u or 136"></label>' +
       '<div class="chapter-list" id="chapters"></div>';
+    listen(query('#save-material-grade'),'click',async()=>{const grade=query('#material-grade').value;if(!GRADES.includes(grade))return toast('Choose a grade first.');try{await mutate(s=>s.records.push(record('material_profile',{materialId:id,grade})));toast('Material grade saved.');}catch(error){onError('Grade could not save',error.message);}});
     const drawChapters = term => {
       query('#chapters').innerHTML = m.chapters.filter(c => {
         const page = Number(term);
@@ -160,7 +171,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     document.body.classList.add('lesson-presentation');
     main.innerHTML = '<section class="presentation" aria-label="Lesson presentation"><div class="presentation-toolbar">' +
       '<a class="btn" href="#level/' + materialId + '">← Chapters</a><div class="presentation-title"><strong>' +
-      escape(chapter.title) + '</strong><small>Phonics A</small></div>' + button('teacher-guide', 'Teacher’s guide') +
+      escape(chapter.title) + '</strong><small>'+escape(m.title)+'</small></div>' + button('teacher-guide', 'Teacher’s guide') +
       '</div><div class="card-reference"><span id="page-ref"></span><label>Card <select id="card-picker" aria-label="Choose lesson card">' +
       chapter.cards.map((c, i) => '<option value="' + i + '">' + (i + 1) + ' · p. ' + c.page + ' · ' + escape(c.label) + '</option>').join('') +
       '</select></label></div><div class="teaching-card" id="teaching-card" tabindex="0" aria-label="Teaching card"></div>' +
@@ -173,7 +184,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       if (pictureUrl) URL.revokeObjectURL(pictureUrl);
       pictureUrl = card.image ? URL.createObjectURL(activePack.assets[card.image]) : null;
       query('#teaching-card').innerHTML = pictureUrl ? '<img src="' + pictureUrl + '" alt="' +
-        escape(card.label + ' from Phonics A, workbook page ' + card.page) + '" draggable="false">' :
+        escape(card.label + ' from '+m.title+', workbook page ' + card.page) + '" draggable="false">' :
         '<div class="word-card">' + escape(card.text) + '</div>';
       query('#page-ref').textContent = 'Workbook page ' + card.page + ' · ' + card.label;
       query('#card-count').textContent = (index + 1) + ' of ' + chapter.cards.length;
@@ -221,7 +232,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
         escape(chapter.title) + '</h3><p class="muted">Workbook page ' + card.page + ' · Card ' + (index + 1) +
         '</p><p>' + escape(card.guide) + '</p><div class="note green">Give each child their own turn. Record a score such as 4 out of 5 based on the work you actually checked.</div>' +
         '<div class="actions lesson-secondary">' + button('show-workbook', 'Open workbook for printing') +
-        button('chapter-score', 'Record chapter scores') + '</div><p class="muted lesson-secondary">Original illustrations and worksheets © K5 Learning. Your purchased workbook is included in this private pack.</p>');
+        button('chapter-score', 'Record chapter scores') + '</div><p class="muted lesson-secondary">Your workbook is included in this private pack. Keep materials within their permitted use.</p>');
       document.querySelector('#show-workbook').onclick = () => openWorkbook(card.pdfPage);
       document.querySelector('#chapter-score').onclick = () => endLesson(m, chapter, card, false, display);
     });
@@ -279,7 +290,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
           if (earned !== null || notes || !previous || complete !== Boolean(previous?.complete)) {
             records.push(record('chapter_result', {
               materialId: material.id, chapterId: chapter.id, childId: p.childId,
-              earned: earned ?? previous?.earned ?? null, total: total ?? previous?.total ?? null, complete, notes, page: card.page
+              earned: earned ?? previous?.earned ?? null, total: total ?? previous?.total ?? null, complete, notes: notes || previous?.notes || '', page: card.page
             }));
           }
         }
@@ -332,7 +343,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
               '</div><a class="btn" href="#lesson/' + m.id + '/' + ch.id + '">' +
               (r.mastered ? 'Review' : ready ? 'Continue learning' : 'Parent access') + '</a></article>';
           }).join('') + '</div></section>';
-      }).join('') || '<div class="empty">Open the Phonics A lesson pack to see its chapters here. Existing scores remain in your learning backup.</div><a class="btn" href="#level/k5-phonics-a">Open Level A</a>';
+      }).join('') || '<div class="empty">Open the matching lesson packs to see their chapters here. Existing scores remain in your learning backup.</div><a class="btn" href="#level/k5-phonics-a">Open a lesson pack</a>';
     }
     draw();
     listen(query('#progress-child'), 'change', draw);
