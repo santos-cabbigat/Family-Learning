@@ -1,0 +1,4 @@
+let database;
+export async function openStore(){database=await new Promise((resolve,reject)=>{const request=indexedDB.open('family-learning',1);request.onupgradeneeded=()=>{request.result.createObjectStore('state');};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);request.onblocked=()=>reject(new Error('Close other Family Learning tabs and try again.'));});}
+export async function readState(){return new Promise((resolve,reject)=>{const tx=database.transaction('state','readonly');const req=tx.objectStore('state').get('family');req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});}
+export async function writeState(state){return new Promise((resolve,reject)=>{const tx=database.transaction('state','readwrite');tx.objectStore('state').put(state,'family');tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||new Error('The device could not save your work.'));});}

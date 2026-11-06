@@ -18,14 +18,12 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v6
-      - name: Unpack release
-        run: unzip -q Family-Learning-GitHub-0.1.2.zip -d _release
       - name: Check learner data and backups
-        run: node --test _release/Family-Learning/tests/core.test.js
+        run: node --test tests/*.test.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: _release/Family-Learning/docs
+          path: docs
       - name: Publish website
         id: deployment
         uses: actions/deploy-pages@v4
