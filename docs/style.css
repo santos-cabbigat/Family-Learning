@@ -34,3 +34,24 @@
  .settings-detail .actions>.btn{flex:1 1 160px}
  .settings-detail .card-head{flex-wrap:wrap}
 }
+.setup-guide{display:grid;gap:20px}
+.setup-guide p{margin-bottom:0}
+.setup-links{display:flex;flex-wrap:wrap;gap:10px}
+.setup-links>.btn{flex:1 1 220px;text-align:center;min-height:48px}
+.setup-step{scroll-margin-top:18px}
+.setup-step h2{display:flex;align-items:center;gap:12px;line-height:1.35;margin-bottom:0}
+.setup-number{display:grid;place-items:center;flex:0 0 34px;height:34px;background:var(--green);color:#fff;border-radius:50%;font-size:16px}
+.setup-step ol{margin:0;padding-left:24px;font-size:14px;line-height:1.8}
+.setup-step li+li{margin-top:10px}
+.setup-check{padding:14px;border-left:3px solid #658457;background:#eff4e8;border-radius:0 8px 8px 0;font-size:13px}
+.setup-copy{display:grid;gap:10px;padding:14px;background:#f4f6ef;border:1px solid var(--line);border-radius:9px;min-width:0}
+.setup-copy code{display:block;overflow-wrap:anywhere;white-space:normal;font-size:13px;line-height:1.7;user-select:all}
+.setup-copy .btn{justify-self:start}
+.setup-help{margin:0;font-size:14px;line-height:1.7}
+.setup-help dt{font-weight:650;margin-top:18px}
+.setup-help dt:first-child{margin-top:0}
+.setup-help dd{margin:5px 0 0;color:var(--muted)}
+.setup-shortcuts{border:2px solid #b9cbb1}
+.setup-sources{padding:16px;font-size:13px;line-height:1.8}
+.setup-sources summary{cursor:pointer;min-height:44px}
+@media(max-width:700px){.setup-links{display:grid;grid-template-columns:minmax(0,1fr)}.setup-links>.btn{width:100%}.setup-copy .btn{width:100%}.setup-step h2{font-size:20px;align-items:flex-start}.setup-guide .card{min-width:0}}

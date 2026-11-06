@@ -1,3 +1,4 @@
+import {driveGuide} from './drive-guide.js';
 import {listPacks,exportPack,importPack} from './lesson-store.js';
 import {GRADES,activeStudents,currentProfiles,rosterChanges} from './students.js';
 import {APP_URL,REPOSITORY_URL,isOfficialWeb,compareVersions,waitForInstall} from './release.js';
@@ -90,14 +91,14 @@ function driveSettings(){
  ${connected?'<button class="btn" id="settings-disconnect-drive">Disconnect this device</button>':''}
  <p class="muted">Connecting does not upload anything. Choose Backup and restore → Sync now to save your work.</p>
  <p class="muted">${state.lastSync?'Last verified backup: '+escape(date(state.lastSync)):'Your learning records are saved on this device. No Drive backup has been verified yet.'}</p>
- <a class="text-link" href="#settings/drive-setup">App owner connection setup</a>`;
+ <div class="setup-links"><a class="btn primary" href="#settings/drive-setup">Step-by-step connection guide</a><a class="btn" href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener noreferrer">Open Google Drive API</a></div>`;
  $('#settings-connect-drive').onclick=async()=>{
   if(busy)return;busy=true;const b=$('#settings-connect-drive'),out=$('#drive-connect-status');b.disabled=true;
   try{
    if(!navigator.onLine)throw new Error('Connect to the internet to sign in. Your saved records remain on this device.');
    if(!driveReady){
     out.textContent='Checking Google Drive setup…';driveReady=await prepareDrive(true);
-    if(!driveReady){driveError='Google sign-in is not configured for this website. Open App owner connection setup below. You can still export a backup in Backup and restore.';}
+    if(!driveReady){driveError='Google sign-in is not configured for this website. Open the Step-by-step connection guide below. You can still export a backup in Backup and restore.';}
     else{driveError='';toast('Google sign-in is ready. Tap Connect Google Drive to choose your account.');}
    }else{
     out.textContent='Opening Google account selection…';
@@ -110,7 +111,9 @@ function driveSettings(){
  if($('#settings-disconnect-drive'))$('#settings-disconnect-drive').onclick=()=>{if(busy)return;disconnectDrive();driveSettings();updateStatus();toast('Disconnected. Your local records and Drive backups are kept.');};
 }
 function driveSetup(){
- main.innerHTML=settingsBack('settings/drive','Google Drive')+heading('Connection setup','One-time setup for the app owner.')+`<article class="card stack settings-detail"><p>Families can choose their own Google account after the website’s Google sign-in setup is complete.</p><ol class="install-steps"><li>In <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud</a>, enable Google Drive API for this app’s project.</li><li>Configure Google Auth Platform for your intended audience. Add test users while the app is in testing.</li><li>Create an OAuth client of type <strong>Web application</strong> with this authorized JavaScript origin: <code>https://santos-cabbigat.github.io</code>.</li><li>Give the app maintainer the public <strong>client ID</strong> to enable the website for all families. Never share or put a client secret in this app.</li></ol><p class="note">This website currently ${configuredClientId()?'has a client ID available on this device.':'has no Google client ID configured.'} Connecting Google Drive to ChatGPT does not configure Family Learning.</p><form id="drive-settings" class="stack"><label>Client ID for testing on this device<input name="clientId" autocomplete="off" spellcheck="false" value="${escape(configuredClientId())}" placeholder="…apps.googleusercontent.com"></label><p class="muted">Optional owner setting. This applies only to this browser. Leave it empty to use the website’s shared setup.</p><button class="btn primary" type="submit">Save connection setup</button><p id="drive-settings-status" role="status"></p></form></article>`;
+ main.innerHTML=settingsBack('settings/drive','Google Drive')+heading('Google Drive setup guide','Follow these steps in order. Each step tells you what to check.')+driveGuide(configuredClientId(),escape);
+ $('#setup-jump').onchange=e=>{const step=document.getElementById('setup-step-'+e.target.value);if(step){step.scrollIntoView({behavior:'smooth',block:'start'});const title=step.querySelector('h2');title.tabIndex=-1;title.focus({preventScroll:true});}};
+ document.querySelectorAll('[data-setup-copy]').forEach(button=>button.onclick=async()=>{try{await navigator.clipboard.writeText(button.dataset.setupCopy);toast('Copied. Paste it into the matching Google field.');}catch{toast('Copy is unavailable. Select and copy the address shown above the button.');}});
  $('#drive-settings').onsubmit=async e=>{e.preventDefault();if(busy)return;busy=true;const b=e.submitter,out=$('#drive-settings-status');b.disabled=true;out.textContent='Saving…';try{driveReady=await saveDriveClient(new FormData(e.target).get('clientId'));driveError='';dirty=false;out.textContent=driveReady?'Saved. Return to Google Drive to connect.':'Override cleared. The website still needs Google sign-in setup.';}catch(error){driveReady=false;driveError=error.message;out.textContent=error.message;}finally{busy=false;b.disabled=false;}};
 }
 function settings(section){

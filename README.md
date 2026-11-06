@@ -5,7 +5,7 @@ Source: https://github.com/santos-cabbigat/Family-Learning
 
 The GitHub Actions workflow tests and publishes `docs/`. No purchased workbook or learner records belong in this repository.
 
-## Current edition 0.3.2
+## Current edition 0.3.3
 
 - Phonics A private pack: one activity per card, hidden teacher guidance, workbook page reference, manual stopping point, separate scores and attempt history per child.
 - Local records and packs use separate IndexedDB databases. Updates preserve both.
@@ -43,3 +43,5 @@ Settings now separates the family Connect Google Drive button from the collapsed
 ## Mobile settings update
 
 The primary menu is Today, Subjects, Progress and Settings. Sync is under Settings → Backup and restore. Existing #sync links still work. Settings opens a grouped list; students, Google Drive, reminders, updates and offline access each have their own screen. Create remains in Today and the materials library; individual learning plans remain in Today and Settings. The Google connection button now checks setup and reports missing configuration instead of remaining disabled. Google sign-in still requires the owner-provided Web client ID in docs/config.json; this release does not claim real-account sync is configured.
+
+The Google Drive setup guide now walks the owner through project selection, API enablement, consent, test users, drive.file permission, Web OAuth client creation, local client setup, and verified backup/restore. Large API links appear in Drive settings and at the top, relevant step and bottom of the guide. Checkpoints are instructions for the user, not claims that the app has inspected their Google Cloud project.
