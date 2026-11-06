@@ -34,3 +34,19 @@ test('lesson packs upload separately from grades and verify server checksum',asy
  assert.equal(await drive.uploadLessonPack({id:'a',title:'Test Pack'},blob,()=>{}),'pack-saved');assert.ok(payload.includes('lesson-pack'));assert.ok(payload.includes('pack-test-content'));assert.equal(payload.includes('chapter_result'),false);
 });
 test('selective lesson download rejects oversized files and returns bytes for valid files',async()=>{let tooLarge=true;const drive=await setup(url=>url.includes('alt=media')?new Response(new Blob(['ZIP bytes'])):Response.json({size:tooLarge?101*1024*1024:9}));await assert.rejects(drive.downloadLessonPack('pack'),/100 MB/);tooLarge=false;assert.equal(await (await drive.downloadLessonPack('pack')).text(),'ZIP bytes');});
+
+test('published Google configuration can be refreshed without reinstalling and invalidates a changed client session',async()=>{
+ const drive=await setup(()=>{throw new Error('Connecting must not call Drive or upload records');});
+ assert.equal(drive.isConnected(),true);
+ let published='';globalThis.fetch=async()=>Response.json({googleClientId:published});
+ assert.equal(await drive.prepareDrive(true),false);assert.equal(drive.isConnected(),false);
+ published='67890-published.apps.googleusercontent.com';
+ assert.equal(await drive.prepareDrive(true),true);assert.equal(drive.configuredClientId(),published);
+ await drive.connectDrive();assert.equal(drive.isConnected(),true);
+});
+test('cancelled account switching clears the previous account session',async()=>{
+ const drive=await setup(()=>{throw new Error('No Drive requests expected');});
+ assert.equal(drive.isConnected(),true);
+ window.google.accounts.oauth2.initTokenClient=({error_callback})=>({requestAccessToken:()=>error_callback({type:'popup_closed'})});
+ await assert.rejects(drive.connectDrive(),/closed or blocked/);assert.equal(drive.isConnected(),false);
+});

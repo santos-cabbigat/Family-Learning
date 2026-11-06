@@ -5,8 +5,8 @@ const SCOPE='https://www.googleapis.com/auth/drive.file';
 const CLIENT_KEY='family-learning-google-client';
 export const validClientId=value=>/^\d+-[a-zA-Z0-9_-]+\.apps\.googleusercontent\.com$/.test(value);
 export function configuredClientId(){return config?.googleClientId||'';}
-export async function driveConfig(){
- if(!config){const response=await fetch('./config.json',{cache:'no-store',signal:AbortSignal.timeout(15000)});if(!response.ok)throw new Error('Connection settings could not load. Retry when online.');config=await response.json();const saved=localStorage.getItem(CLIENT_KEY);if(saved)config.googleClientId=saved;}
+export async function driveConfig(refresh=false){
+ if(!config||refresh){const response=await fetch('./config.json',{cache:'no-store',signal:AbortSignal.timeout(15000)});if(!response.ok)throw new Error('Connection settings could not load. Retry when online.');const next=await response.json();const saved=localStorage.getItem(CLIENT_KEY);if(saved)next.googleClientId=saved;if(config&&config.googleClientId!==next.googleClientId)disconnectDrive();config=next;}
  return config;
 }
 export async function saveDriveClient(value){
@@ -23,9 +23,10 @@ function loadGoogle(){
  script.onload=()=>{clearTimeout(timer);if(window.google?.accounts?.oauth2)resolve();else fail();};script.onerror=fail;document.head.append(script);
  });return googleLoading;
 }
-export async function prepareDrive(){const cfg=await driveConfig();if(!cfg.googleClientId)return false;if(!validClientId(cfg.googleClientId))throw new Error('The Google client ID is invalid. Check Drive setup in Settings.');await loadGoogle();return true;}
+export async function prepareDrive(refresh=false){const cfg=await driveConfig(refresh);if(!cfg.googleClientId)return false;if(!validClientId(cfg.googleClientId))throw new Error('The Google client ID is invalid. Check Drive setup in Settings.');await loadGoogle();return true;}
 export function connectDrive(){
  if(!config?.googleClientId||!window.google?.accounts?.oauth2)throw new Error('Complete Google Drive setup in Settings, then connect again.');
+ disconnectDrive();
  return new Promise((resolve,reject)=>{const client=window.google.accounts.oauth2.initTokenClient({client_id:config.googleClientId,scope:SCOPE,callback:response=>{
  if(response.error||!response.access_token)return reject(new Error('Google Drive permission was not granted. Nothing was uploaded.'));
  if(!window.google.accounts.oauth2.hasGrantedAllScopes(response,SCOPE))return reject(new Error('Allow access to files used by Family Learning to enable sync.'));
