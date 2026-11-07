@@ -37,7 +37,7 @@ function course(id){return state.records.find(r=>r.kind==='course'&&r.id===id);}
 function assignments(childId){return state.records.filter(r=>r.kind==='assignment'&&(!childId||r.childId===childId));}
 function submissions(id){return state.records.filter(r=>r.kind==='submission'&&(!id||r.assignmentId===id));}
 function updateStatus(){if(!state)return;const count=pendingRecords(state.records,state.syncedIds).length;$('#backup-badge').textContent=count?`${count} changes · device only`:(state.lastSync?'Drive backup verified':'Saved on this device');$('#connection').textContent=navigator.onLine?(isConnected()?'Google Drive connected':'Online · saved on device'):'Offline · saved on device';}
-async function refreshDrive(){try{driveReady=await prepareDrive(true);driveError='';}catch(e){driveReady=false;driveError=e.message;}updateStatus();if(busy||dirty)return;if(isSyncPage())syncPage();if(location.hash==='#settings/drive')driveSettings();}
+async function refreshDrive(){try{driveReady=await prepareDrive(true);driveError='';}catch(e){driveReady=false;driveError=e.message;}updateStatus();if(busy||dirty)return;if(isSyncPage())syncPage();if(location.hash==='#settings/drive')driveSettings();if(location.hash==='#settings')updateDriveShortcut();}
 function pendingSummary(){const names={profile:'Learner profile changes',course:'Teaching materials',assignment:'Lesson assignments',submission:'Work records',lesson_stop:'Saved stopping points',chapter_result:'Chapter scores',material_profile:'Material grade settings'};const counts={};for(const r of pendingRecords(state.records,state.syncedIds))counts[r.kind]=(counts[r.kind]||0)+1;return Object.entries(counts).map(([kind,count])=>`<li>${escape(names[kind]||kind)}: <strong>${count}</strong></li>`).join('');}
 
 const heading=(title,sub,action='')=>`<div class="page-heading"><div><h1>${escape(title)}</h1><p class="muted">${escape(sub)}</p></div>${action}</div>`;
@@ -54,7 +54,7 @@ function assign(id){const c=course(id);if(!c)return;dialog(`<h2>Assign this less
 function editProfile(id){const p=profiles().find(p=>p.childId===id);dialog(`<h2>Learner profile</h2><form id="profile-form" class="stack"><label>Name or nickname<input name="name" required maxlength="60" value="${escape(p.name)}"></label><label>Current learning level<input name="level" required maxlength="100" value="${escape(p.level)}"></label><div class="actions"><button class="btn primary" type="submit">Save profile</button><button class="btn" type="button" data-close>Cancel</button></div></form>`);$('#profile-form').onsubmit=async e=>{e.preventDefault();e.submitter.disabled=true;try{await add(record('profile',{childId:id,active:p.active!==false,grade:p.grade||'Kindergarten',...Object.fromEntries(new FormData(e.target))}));closeDialog();render();toast('Learner profile saved.');}catch(error){notice('Could not save',error.message);}};}
 function workForm(id){const a=assignments().find(a=>a.id===id);if(!a)return missing();const c=course(a.courseId),p=profiles().find(p=>p.childId===a.childId),work=submissions(id);main.innerHTML=heading(c.title,`${p.name} · ${a.goal}`,`<a class="btn" href="#book/${escape(c.id)}">Open material</a>`)+`<div class="grid"><div class="stack"><article class="card"><span class="badge">Assigned edition</span><h2 style="margin-top:16px">Student activity</h2><div class="prose">${escape(c.student)}</div><h3 style="margin-top:24px">Practice</h3><div class="prose">${escape(c.practice)}</div></article><form id="work-form" class="card stack"><h2>Record this child’s work</h2><label>Answers, observations, or project notes<textarea name="work" required maxlength="100000" rows="5" placeholder="Write the response or describe the activity…"></textarea></label><label>Worksheet photo (optional, up to 10 MB)<input name="photo" class="file-input" type="file" accept="image/jpeg,image/png,image/webp"></label><div class="form-grid"><label>Score earned (optional)<input name="score" type="number" min="0" step="any"></label><label>Possible score<input name="possible" type="number" min="0.01" step="any"></label></div><label>Understanding<select name="understanding"><option>Not assessed yet</option><option>Needs support</option><option>Developing</option><option>Demonstrated independently</option></select></label><label>Parent feedback<textarea name="feedback" maxlength="30000" rows="3"></textarea></label><button class="btn primary" type="submit">Save work record</button><small>A new attempt is saved each time. Earlier work stays intact.</small></form></div><aside class="stack" style="align-content:start"><h2>Learning history</h2>${work.slice().reverse().map(s=>`<article class="card"><div class="card-head"><span class="badge">${escape(s.understanding)}</span><small>${escape(date(s.createdAt))}</small></div><div class="prose">${escape(s.work)}</div>${s.photo?`<img class="photo" src="${escape(s.photo)}" alt="Saved worksheet for ${escape(p.name)}">`:''}${s.score!==''&&s.score!==undefined?`<p style="margin-top:14px">Score: <strong>${escape(s.score)} / ${escape(s.possible)}</strong></p>`:''}${s.feedback?`<div class="note green" style="margin-top:14px">${escape(s.feedback)}</div>`:''}</article>`).join('')||'<div class="empty">No work submitted yet. This record belongs only to this child.</div>'}</aside></div>`;$('#work-form').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;try{const f=new FormData(e.target);if((f.get('score')==='')!==(f.get('possible')===''))throw new Error('Enter both the earned and possible score, or leave both blank.');if(f.get('score')!==''&&Number(f.get('score'))>Number(f.get('possible')))throw new Error('The earned score cannot exceed the possible score.');const file=f.get('photo');let photo='';if(file?.size){if(file.size>10*1024*1024)throw new Error('Choose a photo smaller than 10 MB.');if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('Choose a JPEG, PNG, or WebP photo.');photo=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(new Error('The photo could not be read.'));r.readAsDataURL(file);});}await add(record('submission',{assignmentId:id,work:f.get('work'),score:f.get('score'),possible:f.get('possible'),understanding:f.get('understanding'),feedback:f.get('feedback'),photo}));dirty=false;render();toast('Work saved on this device.');checkReminder();}catch(error){notice('Could not save work',error.message);}finally{button.disabled=false;}};}
 function isSyncPage(){return ['#sync','#settings/backup'].includes(location.hash);}
-function syncPage(){const pending=pendingRecords(state.records,state.syncedIds);main.innerHTML=settingsBack()+heading('Backup and sync','Keep learning records on your devices and a recovery copy in Google Drive.')+`<div class="grid"><article class="card stack"><div class="card-head"><h2>Google Drive</h2><span class="badge">${isConnected()?'Connected':driveReady?'Ready to connect':'App owner setup needed'}</span></div><p>${state.lastSync?'Last verified backup: '+escape(date(state.lastSync)):'No verified Google Drive backup yet.'}</p>${driveError?`<div class="note" role="alert">${escape(driveError)}</div>`:''}<p class="muted">${driveReady?'Sign in, then use Sync now to combine this family’s records across devices.':'Direct sync needs Google sign-in configured for this website. Opening the workbook folder or connecting Google Drive to ChatGPT does not connect this app.'}</p><div class="actions">${driveReady?`<button class="btn primary" id="sync-now" ${busy?'disabled':''}>${isConnected()?'Sync now':'Connect Google Drive'}</button><button class="btn" id="restore-drive" ${busy?'disabled':''}>Restore from Drive</button>`:'<a class="btn primary" href="#settings/drive">Google Drive settings</a><button class="btn" id="retry-drive">Retry connection setup</button>'}${isConnected()?'<button class="btn" id="disconnect">Disconnect</button>':''}</div><div id="sync-progress" role="status" aria-live="polite"></div><p class="muted">Sync runs when you press Sync now. Failed uploads leave your records on this device and available to retry.</p></article><article class="card stack"><h2>Waiting for a Drive backup</h2><p>${pending.length} changes · ${bytes(pendingBytes(state.records,state.syncedIds))}</p><ul>${pendingSummary()||'<li>No new learning records waiting.</li>'}</ul><p class="muted">Only records confirmed in a verified Drive upload are marked backed up.</p></article><article class="card stack"><h2>Export or import a backup</h2><p>Includes all students’ profiles, materials you created, assignments, scores, stopping points, and settings.</p><div class="actions"><button class="btn primary" id="export">${native?'Save backup to files / Drive':'Export backup'}</button><button class="btn" id="import">Import backup</button></div><p class="muted">Last export: ${escape(date(state.lastExport))}. Save the downloaded JSON file to your Google Drive folder.</p><p class="note">Purchased workbooks and card images stay in separate lesson pack ZIPs. Import each pack once per device, or restore packs from your Drive. Exporting a file does not confirm that it reached Drive.</p></article><article class="card stack"><h2>Lesson packs in your Drive</h2><p>Back up the installed ZIP packs to the Google account you connect here. Download them one by one on a new device.</p><div class="actions"><button class="btn" id="backup-packs" ${!isConnected()||busy?'disabled':''}>Back up installed lesson packs</button><button class="btn" id="list-drive-packs" ${!isConnected()||busy?'disabled':''}>Browse my Drive lesson packs</button></div><p class="muted">Connect Google Drive first. The app creates its own materials folder automatically. Each household uses its own Drive; sharing this website does not share anyone’s records or purchased books.</p><div id="pack-drive-status" role="status"></div><div id="drive-pack-list" class="stack"></div></article><article class="card stack"><h2>Use another device</h2><ol><li>Open the same <a href="${APP_URL}">GitHub website</a>.</li><li>Import your JSON backup, or connect Google Drive and choose Restore from Drive before entering new records. Use your own household’s Google account.</li><li>Download your lesson packs from Drive below, or import their ZIP files.</li><li>Use Sync now to combine later work, or export/import updated JSON backups.</li></ol></article></div>`;
+function syncPage(){const pending=pendingRecords(state.records,state.syncedIds);main.innerHTML=settingsBack()+heading('Backup and sync','Keep learning records on your devices and a recovery copy in Google Drive.')+`<div class="grid"><article class="card stack"><div class="card-head"><h2>Google Drive</h2><span class="badge">${isConnected()?'Connected':driveReady?'Ready to connect':'App owner setup needed'}</span></div><p>${state.lastSync?'Last verified backup: '+escape(date(state.lastSync)):'No verified Google Drive backup yet.'}</p>${driveError?`<div class="note" role="alert">${escape(driveError)}</div>`:''}<p class="muted">${driveReady?'Sign in, then use Sync now to combine this family’s records across devices.':'The app owner is setting up Google Drive. Use Export backup to save a copy to your device.'}</p><div class="actions">${driveReady?`<button class="btn primary" id="sync-now" ${busy?'disabled':''}>${isConnected()?'Sync now':'Connect Google Drive'}</button><button class="btn" id="restore-drive" ${busy?'disabled':''}>Restore from Drive</button>`:'<a class="btn primary" href="#settings/drive">Google Drive settings</a><button class="btn" id="retry-drive">Retry connection setup</button>'}${isConnected()?'<button class="btn" id="disconnect">Disconnect</button>':''}</div><div id="sync-progress" role="status" aria-live="polite"></div><p class="muted">Sync runs when you press Sync now. Failed uploads leave your records on this device and available to retry.</p></article><article class="card stack"><h2>Waiting for a Drive backup</h2><p>${pending.length} changes · ${bytes(pendingBytes(state.records,state.syncedIds))}</p><ul>${pendingSummary()||'<li>No new learning records waiting.</li>'}</ul><p class="muted">Only records confirmed in a verified Drive upload are marked backed up.</p></article><article class="card stack"><h2>Export or import a backup</h2><p>Includes all students’ profiles, materials you created, assignments, scores, stopping points, and settings.</p><div class="actions"><button class="btn primary" id="export">${native?'Save backup to files / Drive':'Export backup'}</button><button class="btn" id="import">Import backup</button></div><p class="muted">Last export: ${escape(date(state.lastExport))}. Save the downloaded JSON file to your Google Drive folder.</p><p class="note">Purchased workbooks and card images stay in separate lesson pack ZIPs. Import each pack once per device, or restore packs from your Drive. Exporting a file does not confirm that it reached Drive.</p></article><article class="card stack"><h2>Lesson packs in your Drive</h2><p>Back up the installed ZIP packs to the Google account you connect here. Download them one by one on a new device.</p><div class="actions"><button class="btn" id="backup-packs" ${!isConnected()||busy?'disabled':''}>Back up installed lesson packs</button><button class="btn" id="list-drive-packs" ${!isConnected()||busy?'disabled':''}>Browse my Drive lesson packs</button></div><p class="muted">Connect Google Drive first. The app creates its own materials folder automatically. Each household uses its own Drive; sharing this website does not share anyone’s records or purchased books.</p><div id="pack-drive-status" role="status"></div><div id="drive-pack-list" class="stack"></div></article><article class="card stack"><h2>Use another device</h2><ol><li>Open the same <a href="${APP_URL}">GitHub website</a>.</li><li>Import your JSON backup, or connect Google Drive and choose Restore from Drive before entering new records. Use your own household’s Google account.</li><li>Download your lesson packs from Drive below, or import their ZIP files.</li><li>Use Sync now to combine later work, or export/import updated JSON backups.</li></ol></article></div>`;
  if($('#sync-now'))$('#sync-now').onclick=()=>runDrive(false);if($('#restore-drive'))$('#restore-drive').onclick=()=>runDrive(true);if($('#retry-drive'))$('#retry-drive').onclick=async()=>{const b=$('#retry-drive');b.disabled=true;b.textContent='Checking…';await refreshDrive();};$('#backup-packs').onclick=()=>managePacks(true);$('#list-drive-packs').onclick=()=>managePacks(false);$('#export').onclick=exportBackup;$('#import').onclick=importBackup;if($('#disconnect'))$('#disconnect').onclick=()=>{disconnectDrive();render();};}
 
 async function managePacks(upload){
@@ -78,37 +78,80 @@ function studentSettings(){
  host.querySelectorAll('[data-reactivate]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{await mutate(s=>{const p=currentProfiles(s.records).find(p=>p.childId===b.dataset.reactivate);if(!p)return;if(activeStudents(s.records).length>=100)throw new Error('This edition supports up to 100 active students.');s.records.push(record('profile',{childId:p.childId,name:p.name,grade:p.grade||'Kindergarten',level:p.level||'Kindergarten',active:true}));});studentSettings();toast('Student restored with their earlier records.');}catch(error){notice('Could not restore student',error.message);}});
 }
 const settingsBack=(parent='settings',label='Settings')=>`<a class="settings-back" href="#${parent}">← ${label}</a>`;
-function driveSettings(){
- const panel=$('#drive-connection');if(!panel)return;
- const connected=isConnected();
- panel.innerHTML=`<div class="card-head"><h2>Google Drive</h2><span class="badge">${connected?'Connected':driveReady?'Ready to connect':configuredClientId()?'Connection unavailable':'Setup needed'}</span></div>
- <p>Keep a recovery copy of your family’s records in your own Google account.</p>
- ${!driveReady?`<div class="note">${configuredClientId()?'Google sign-in could not load. Check your internet connection, then try again.':'Google sign-in has not been enabled for this website yet. The app owner must finish a one-time setup before any family can connect.'}</div>`:''}
- ${driveError?`<p class="note" role="alert">${escape(driveError)}</p>`:''}
- <button class="btn primary" id="settings-connect-drive" ${busy?'disabled':''}>${connected?'Choose another Google account':driveReady?'Connect Google Drive':'Check Google Drive connection'}</button>
- <p id="drive-connect-status" role="status" aria-live="polite"></p>
- <a class="settings-row" href="#settings/backup"><span><strong>Backup and restore</strong><small>Sync records and manage lesson packs</small></span><span aria-hidden="true">›</span></a>
- ${connected?'<button class="btn" id="settings-disconnect-drive">Disconnect this device</button>':''}
- <p class="muted">Connecting does not upload anything. Choose Backup and restore → Sync now to save your work.</p>
- <p class="muted">${state.lastSync?'Last verified backup: '+escape(date(state.lastSync)):'Your learning records are saved on this device. No Drive backup has been verified yet.'}</p>
- <div class="setup-links"><a class="btn primary" href="#settings/drive-setup">Step-by-step connection guide</a><a class="btn" href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener noreferrer">Open Google Drive API</a></div>`;
- $('#settings-connect-drive').onclick=async()=>{
-  if(busy)return;busy=true;const b=$('#settings-connect-drive'),out=$('#drive-connect-status');b.disabled=true;
-  try{
-   if(!navigator.onLine)throw new Error('Connect to the internet to sign in. Your saved records remain on this device.');
-   if(!driveReady){
-    out.textContent='Checking Google Drive setup…';driveReady=await prepareDrive(true);
-    if(!driveReady){driveError='Google sign-in is not configured for this website. Open the Step-by-step connection guide below. You can still export a backup in Backup and restore.';}
-    else{driveError='';toast('Google sign-in is ready. Tap Connect Google Drive to choose your account.');}
-   }else{
-    out.textContent='Opening Google account selection…';
-    // Keep requestAccessToken directly on this tap, without fetching configuration first.
-    await connectDrive();driveError='';toast('Google Drive connected. No records uploaded yet.');
-   }
-  }catch(error){driveError=error.message;}
-  finally{busy=false;if(panel.isConnected)driveSettings();updateStatus();}
+function updateDriveShortcut() {
+ const entry = document.getElementById('family-drive-entry');
+ if (!entry) return;
+ const connected = isConnected();
+ const canConnect = driveReady && !connected;
+ const title = canConnect ? 'Connect Google Drive' : 'Google Drive';
+ const detail = connected ? 'Connected' : canConnect ? 'Choose your Google account' : 'Connection and backups';
+ const content = `<span class="settings-icon">${icon('sync')}</span><span class="settings-label"><strong>${title}</strong><small>${detail}</small></span><span class="settings-chevron" aria-hidden="true">›</span>`;
+ if (canConnect) {
+  entry.innerHTML = `<button type="button" class="settings-row drive-shortcut">${content}</button>`;
+  entry.firstElementChild.onclick = connectFamilyDrive;
+ } else {
+  entry.innerHTML = `<a href="#settings/drive" class="settings-row">${content}</a>`;
+ }
+}
+
+async function connectFamilyDrive(event) {
+ if (busy) return;
+ const button = event.currentTarget;
+ const startPage = location.hash;
+ busy = true;
+ button.disabled = true;
+ try {
+  if (!navigator.onLine) throw new Error('Connect to the internet and try again.');
+  // Request consent directly during the tap so mobile browsers can open the account chooser.
+  await connectDrive();
+  driveError = '';
+  toast('Google Drive connected.');
+ } catch (error) {
+  driveError = error.message;
+ } finally {
+  busy = false;
+  button.disabled = false;
+  updateStatus();
+  if (startPage === '#settings' && location.hash === startPage) location.hash = 'settings/drive';
+  else if (location.hash === '#settings/drive') driveSettings();
+  else if (location.hash === '#settings') updateDriveShortcut();
+ }
+}
+
+function driveSettings() {
+ const panel = document.getElementById('drive-connection');
+ if (!panel) return;
+ const connected = isConnected();
+ const ready = connected || driveReady;
+ let message = 'Google Drive is waiting for the app owner to finish setup. Your family can keep using this device.';
+ if (!navigator.onLine) message = 'Connect to the internet to use Google Drive.';
+ else if (configuredClientId() && !ready) message = 'Google sign-in could not load. Check your internet connection and try again.';
+ else if (ready) message = connected ? 'Open Backup and restore to save or recover your family’s records.' : 'Choose your Google account and allow Family Learning to save backups in your Drive.';
+ panel.innerHTML = `<p>${message}</p>
+  ${driveError ? `<p class="note" role="alert">${escape(driveError)}</p>` : ''}
+  ${ready ? `<button class="btn primary" type="button" id="settings-connect-drive">${connected ? 'Choose another Google account' : 'Connect Google Drive'}</button>` : '<button class="btn" type="button" id="retry-family-drive">Check Google Drive connection</button>'}
+  ${connected ? '<span class="badge">Connected</span>' : ''}
+  <a class="settings-row" href="#settings/backup"><span><strong>Backup and restore</strong><small>Save or recover your family’s records and lesson packs</small></span><span aria-hidden="true">›</span></a>
+  ${connected ? '<button class="btn" type="button" id="settings-disconnect-drive">Disconnect this device</button>' : ''}
+  <details><summary>App owner setup</summary><div class="setup-links"><a class="btn" href="#settings/drive-setup">Step-by-step connection guide</a><a class="btn" href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener noreferrer">Find the Google client ID</a><a class="btn" href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener noreferrer">Open Google Drive API</a></div></details>`;
+ const connect = panel.querySelector('#settings-connect-drive');
+ if (connect) connect.onclick = connectFamilyDrive;
+ const retry = panel.querySelector('#retry-family-drive');
+ if (retry) retry.onclick = async () => {
+  if (busy) return;
+  retry.disabled = true;
+  retry.textContent = 'Checking…';
+  await refreshDrive();
+  if (!driveReady && !driveError && panel.isConnected) toast('Owner setup is still pending.');
  };
- if($('#settings-disconnect-drive'))$('#settings-disconnect-drive').onclick=()=>{if(busy)return;disconnectDrive();driveSettings();updateStatus();toast('Disconnected. Your local records and Drive backups are kept.');};
+ const disconnect = panel.querySelector('#settings-disconnect-drive');
+ if (disconnect) disconnect.onclick = () => {
+  if (busy) return;
+  disconnectDrive();
+  driveSettings();
+  updateStatus();
+  toast('Disconnected on this device.');
+ };
 }
 function driveSetup(){
  main.innerHTML=settingsBack('settings/drive','Google Drive')+heading('Google Drive setup guide','Follow these steps in order. Each step tells you what to check.')+driveGuide(configuredClientId(),escape);
@@ -119,7 +162,7 @@ function driveSetup(){
 function settings(section){
  const row=(path,title,detail,ico)=>`<a class="settings-row" href="#${path}"><span class="settings-icon">${icon(ico)}</span><span class="settings-label"><strong>${title}</strong><small>${detail}</small></span><span class="settings-chevron" aria-hidden="true">›</span></a>`;
  if(!section){
-  main.innerHTML=heading('Settings','Choose what you want to manage.')+`<div class="settings-menu"><section class="settings-group" aria-label="Family"><h2>Family</h2><div class="settings-list">${row('settings/students','Students and grades',profiles().length+' active students','learners')}${row('learners','Learning plans','Assignments and records for each child','library')}</div></section><section class="settings-group" aria-label="Backup"><h2>Backup</h2><div class="settings-list">${row('settings/drive','Google Drive',isConnected()?'Connected':driveReady?'Ready to connect':'Not connected','sync')}${row('settings/backup','Backup and restore','Sync, export, import and lesson packs','library')}${row('settings/reminders','Backup reminders','Choose when to be reminded','settings')}</div></section><section class="settings-group" aria-label="App"><h2>App</h2><div class="settings-list">${row('settings/updates','App updates','Web edition '+VERSION,'sync')}${row('settings/offline','Offline and installation','Home-screen access and device storage','home')}${row('settings/about','About Family Learning','Website and app information','settings')}</div></section></div>`;return;
+  main.innerHTML=heading('Settings','Choose what you want to manage.')+`<div class="settings-menu"><section class="settings-group" aria-label="Family"><h2>Family</h2><div class="settings-list">${row('settings/students','Students and grades',profiles().length+' active students','learners')}${row('learners','Learning plans','Assignments and records for each child','library')}</div></section><section class="settings-group" aria-label="Backup"><h2>Backup</h2><div class="settings-list"><div id="family-drive-entry"></div>${row('settings/backup','Backup and restore','Sync, export, import and lesson packs','library')}${row('settings/reminders','Backup reminders','Choose when to be reminded','settings')}</div></section><section class="settings-group" aria-label="App"><h2>App</h2><div class="settings-list">${row('settings/updates','App updates','Web edition '+VERSION,'sync')}${row('settings/offline','Offline and installation','Home-screen access and device storage','home')}${row('settings/about','About Family Learning','Website and app information','settings')}</div></section></div>`;updateDriveShortcut();return;
  }
  if(section==='backup')return syncPage();
  if(section==='drive-setup')return driveSetup();
