@@ -1,8 +1,9 @@
+import {rowLink,screenMenu} from './screens.js';
 import {GRADES,activeStudents,materialGrade} from './students.js';
 import { record, latestProfiles } from './core.js';
 import { SUBJECTS, latestStop, chapterProgress } from './learning-core.js';
 import { getPack, listPacks, importPack } from './lesson-store.js';
-import {mountDownloads} from './package-catalog.js';
+import {mountDownloads,rememberDownloadLink} from './package-catalog.js';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -49,73 +50,64 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
   function result(childId, materialId, chapterId) {
     return chapterProgress(getState().records, childId, materialId, chapterId, target());
   }
-  async function choosePack() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.zip,application/zip';
-    input.setAttribute('aria-label', 'Choose lesson pack ZIP');
-    input.hidden = true;
-    document.body.append(input);
-    input.addEventListener('cancel', () => input.remove(), { once: true });
-    input.onchange = async () => {
-      const file = input.files[0];
-      input.remove();
-      if (!file) return;
-      dialog('<h2>Opening lesson pack</h2><p role="status">Checking the cards and saving them for use on this device…</p>');
-      try {
-        const manifest = await importPack(file);
-        closeDialog();
-        toast('Lesson pack ready on this device.');
-        if (location.hash === '#level/' + manifest.id) await level(manifest.id);
-        else location.hash = '#level/' + manifest.id;
-      } catch (error) { onError('Lesson pack could not open', error.message); }
-    };
-    input.click();
-  }
   function installPanel() {
-    return '<article class="card pack-setup"><h2>Add a lesson pack</h2>' +
-      '<p>The app comes without purchased workbooks. Choose a prepared Family Learning ZIP from your files, or download a pack you previously backed up to your own Google Drive.</p>' +
-      '<div class="actions">'+button('choose-pack', 'Open lesson pack', true)+'<a class="btn" href="#settings/backup">My Drive lesson packs</a></div>' +
-      '<p class="muted">Import once per device for offline use. Your scores are separate from the pack. Use materials you own or have permission to use.</p></article>';
+    return '<div class="screen-menu">'+rowLink('#downloads','Open Downloads','Choose a material or add your lesson pack ZIP')+'</div>';
   }
   function materialPanel(packs, name, selectedId, refresh) {
     const panel = main.querySelector('.subject-materials');
     mountDownloads(panel, {grade:gradeFilter, subject:name, records:getState().records, installed:packs, selectedId, refresh})
       .catch(error => { if (panel.isConnected) panel.textContent = 'Could not open materials. ' + error.message; });
   }
-  async function subjects(selectedId) {
+  let downloadSubject = '';
+  async function downloads(selectedId) {
+    const linked=rememberDownloadLink(location.hash);
+    if(linked) {
+      downloadSubject=linked.subject; selectGrade('All grades'); selectedId=linked.id;
+      history.replaceState(history.state,'','#downloads');
+    }
     const version = reset();
     loading();
     const packs = await listPacks();
     if (version !== routeVersion) return;
-    main.innerHTML = title('Learning subjects', 'Choose a grade to download or open a material.') + gradeControl() +
-      '<section class="card stack subject-materials" aria-label="Materials by grade"></section>' +
-      '<div class="subject-grid">' + SUBJECTS.map(subject => {
-        const count = packs.filter(pack => pack.subject === subject && matchesGrade(pack)).length;
-        return '<a class="card subject-tile" href="#subject/' + encodeURIComponent(subject) + '"><h2>' + escape(subject) +
-          '</h2><p class="muted">' + count + ' ready on this device</p></a>';
-      }).join('') + '</div><div class="actions lesson-secondary"><a class="btn" href="#library">Other teaching materials</a><a class="btn" href="#learning-progress">View progress</a></div>';
-    listen(query('#grade-filter'), 'change', event => { selectGrade(event.target.value); subjects(); });
-    materialPanel(packs, undefined, selectedId, subjects);
+    main.innerHTML = title('Downloads','Choose a subject and a material to save on this device.') +
+      '<div class="download-filters">' + gradeControl() +
+      '<label>Subject<select id="download-subject"><option value="">All subjects</option>' +
+      SUBJECTS.map(name => '<option' + (downloadSubject === name ? ' selected' : '') + '>' + escape(name) + '</option>').join('') +
+      '</select></label></div><section class="card stack subject-materials" aria-label="Available materials"></section>';
+    listen(query('#grade-filter'),'change',event => { selectGrade(event.target.value); downloads(); });
+    listen(query('#download-subject'),'change',event => { downloadSubject=event.target.value; downloads(); });
+    materialPanel(packs, downloadSubject || undefined, selectedId, downloads);
   }
-  async function subject(name, selectedId) {
+  async function subjects() {
     const version = reset();
     loading();
     const packs = await listPacks();
     if (version !== routeVersion) return;
-    const matching = packs.filter(pack => pack.subject === name && matchesGrade(pack));
-    const aliases = {Mathematics:'Math','Reading comprehension':'Reading Comprehension',Phonetics:'Phonics'};
+    main.innerHTML = title('Subjects','') + gradeControl() + '<div class="screen-menu">' +
+      rowLink('#downloads','Downloads','Get materials for any subject') +
+      SUBJECTS.map(name => {
+        const count = packs.filter(p => p.subject === name && matchesGrade(p)).length;
+        return rowLink('#subject/'+encodeURIComponent(name),name,count+' ready on this device');
+      }).join('')+rowLink('#library','Teaching library','Your family’s own lessons') + '</div>';
+    listen(query('#grade-filter'),'change',event => { selectGrade(event.target.value); subjects(); });
+  }
+  async function subject(name) {
+    const version = reset();
+    loading();
+    const packs = await listPacks();
+    if (version !== routeVersion) return;
+    const matching = packs.filter(p => p.subject === name && matchesGrade(p));
+    const aliases = {Mathematics:'Math','Reading comprehension':'Reading Comprehension',Phonetics:'Phonics','Nature study':'Science'};
     const resources = getState().records.filter(r => r.kind === 'course' &&
       (aliases[r.subject] || r.subject).toLowerCase() === name?.toLowerCase() &&
       (gradeFilter === 'All grades' || (r.grade || 'Unassigned') === gradeFilter));
-    main.innerHTML = '<a class="text-link" href="#subjects">All subjects</a>' + title(name, 'Choose a material to download or open.') +
-      gradeControl() + '<section class="card stack subject-materials" aria-label="Subject materials"></section>' +
-      '<div class="grid">' + matching.map(pack => '<a class="card subject-tile" href="#level/' + encodeURIComponent(pack.id) +
-        '"><h2>' + escape(pack.title) + '</h2><p>' + escape(pack.level) + ' · ' + pack.chapters.length + (pack.chapters.length === 1 ? ' chapter' : ' chapters') +
-        '</p><small>Ready on this device</small></a>').join('') + '</div>';
-    if (resources.length) main.insertAdjacentHTML('beforeend','<h2 class="lesson-secondary">Teaching materials</h2><div class="grid">'+resources.map(r=>'<a class="card subject-tile" href="#book/'+encodeURIComponent(r.id)+'"><h3>'+escape(r.title)+'</h3><p>'+escape(r.level)+'</p></a>').join('')+'</div>');
-    listen(query('#grade-filter'), 'change', event => { selectGrade(event.target.value); subject(name); });
-    materialPanel(packs, name, selectedId, id => subject(name, id));
+    main.innerHTML = title(name,'')+gradeControl() + '<div class="screen-menu">' +
+      matching.map(p => rowLink('#level/'+encodeURIComponent(p.id),p.title,'Ready on this device · '+p.chapters.length+' chapters')).join('') +
+      resources.map(r => rowLink('#book/'+encodeURIComponent(r.id),r.title,'Teaching material')).join('')+
+      (!matching.length && !resources.length ? '<p class="empty">No materials saved here for this grade yet.</p>' : '')+
+      rowLink('#downloads','Downloads','Find materials for '+name)+'</div>';
+    listen(query('a[href="#downloads"]'),'click',()=>{downloadSubject=name;});
+    listen(query('#grade-filter'),'change',event => { selectGrade(event.target.value); subject(name); });
   }
   async function level(id) {
     const version = reset();
@@ -125,7 +117,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     activePack = loaded;
     if (!activePack) {
       main.innerHTML = title('Lesson pack needed', 'Import this material before opening its cards.') + installPanel();
-      listen(query('#choose-pack'), 'click', choosePack);
+
       return;
     }
     const m = activePack.manifest;
@@ -134,34 +126,34 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     const savedCard = savedChapter?.cards.find(c => c.id === stop?.cardId);
     const resume = savedCard ? '#lesson/' + id + '/' + savedChapter.id + '/' + savedCard.id :
       '#lesson/' + id + '/' + m.chapters[0].id;
-    main.innerHTML = '<a class="text-link" href="#subject/' + encodeURIComponent(m.subject) + '">' + escape(m.subject) + '</a>' +
-      title(m.title, m.level + ' · '+materialGrade(getState().records,m)) +
-      '<div class="actions lesson-secondary"><label>Material grade<select id="material-grade"><option value="">Choose grade</option>'+GRADES.map(g=>'<option'+(materialGrade(getState().records,m)===g?' selected':'')+'>'+g+'</option>').join('')+'</select></label>'+button('save-material-grade','Save grade')+'</div>' +
-      '<div class="resume-card"><div><h2>' + (savedCard ? 'Continue your lesson' : 'Begin teaching') + '</h2><p>' +
-      (savedCard ? escape(savedChapter.title) + ' · Workbook page ' + savedCard.page + ' · ' + escape(savedCard.label) :
-        'Open a chapter and present one activity at a time.') + '</p></div><a class="btn primary" href="' + resume + '">' +
-      (savedCard ? 'Continue lesson' : 'Start Level A') + '</a></div>' +
-      '<div class="section-heading"><h2>Chapters</h2><a class="text-link" href="#learning-progress">Individual progress</a></div>' +
-      '<p class="muted">Parent teaching view · You can open any chapter. Each child’s next step is based on their own completed work and score.</p>' +
-      '<label class="chapter-search">Find a sound or page<input id="find-chapter" type="search" placeholder="For example, short u or 136"></label>' +
-      '<div class="chapter-list" id="chapters"></div>';
-    listen(query('#save-material-grade'),'click',async()=>{const grade=query('#material-grade').value;if(!GRADES.includes(grade))return toast('Choose a grade first.');try{await mutate(s=>s.records.push(record('material_profile',{materialId:id,grade})));toast('Material grade saved.');}catch(error){onError('Grade could not save',error.message);}});
-    const drawChapters = term => {
-      query('#chapters').innerHTML = m.chapters.filter(c => {
-        const page = Number(term);
-        return !term || c.title.toLowerCase().includes(term) || (page >= c.startPage && page <= c.endPage);
-      }).map((ch) => '<article class="chapter-row"><div><h3>' + escape(ch.title) + '</h3><small>Workbook pages ' +
-        ch.startPage + '–' + ch.endPage + ' · ' + ch.cards.length + ' cards</small><div class="child-statuses">' +
-        people().map(p => {
-          const r = result(p.childId, id, ch.id);
-          return '<span class="status-pill ' + (r.mastered ? 'mastered' : '') + '">' + escape(p.name) + ' · ' +
-            r.status + (r.percentage !== null ? ' · ' + r.percentage + '%' : '') + '</span>';
-        }).join('') + '</div></div><a class="btn" href="#lesson/' + id + '/' + ch.id + '">Teach chapter</a></article>').join('');
-    };
-    main.insertAdjacentHTML('beforeend', '<div class="actions lesson-secondary">' + button('replace-pack', 'Open updated lesson pack') + '</div>');
-    listen(query('#replace-pack'), 'click', choosePack);
-    drawChapters('');
-    listen(query('#find-chapter'), 'input', e => drawChapters(e.target.value.trim().toLowerCase()));
+    main.innerHTML = title(m.title, m.level + ' · ' + materialGrade(getState().records,m)) +
+      '<div class="screen-menu">'+rowLink(resume,savedCard?'Continue lesson':'Start lesson',savedChapter?.title || m.chapters[0].title)+'</div>'+
+      '<div id="level-options"><section id="chapter-screen" class="card stack"><h2>Choose a chapter</h2>'+
+      '<label>Find a sound or page<input id="find-chapter" type="search"></label><label>Chapter<select id="chapter-list"></select></label>'+
+      '<a class="btn primary" id="teach-chapter">Teach chapter</a></section>'+
+      '<section id="material-options" class="card stack"><h2>Material options</h2><label>Grade<select id="material-grade"><option value="">Choose grade</option>'+
+      GRADES.map(g=>'<option'+(materialGrade(getState().records,m)===g?' selected':'')+'>'+g+'</option>').join('')+
+      '</select></label>'+button('save-material-grade','Save grade')+rowLink('#downloads','Open Downloads','Add an updated lesson pack')+'</section></div>';
+    const chapterSelect=query('#chapter-list'), teach=query('#teach-chapter');
+    const selectChapter=()=>{teach.hidden=!chapterSelect.value;teach.href='#lesson/'+m.id+'/'+chapterSelect.value;};
+    function filterChapters(term) {
+      const page=Number(term);
+      const matches=m.chapters.filter(ch=>!term || ch.title.toLowerCase().includes(term) || (page>=ch.startPage && page<=ch.endPage));
+      chapterSelect.replaceChildren(...matches.map(ch=>new Option(ch.title+' · pp. '+ch.startPage+'–'+ch.endPage,ch.id)));
+      if(!matches.length) chapterSelect.add(new Option('No matching chapters',''));
+      selectChapter();
+    }
+    filterChapters('');
+    listen(query('#find-chapter'),'input',event=>filterChapters(event.target.value.trim().toLowerCase()));
+    listen(chapterSelect,'change',selectChapter);
+    listen(query('#save-material-grade'),'click',async()=>{
+      const grade=query('#material-grade').value;
+      if(!GRADES.includes(grade))return toast('Choose a grade first.');
+      try { await mutate(s=>s.records.push(record('material_profile',{materialId:id,grade}))); toast('Material grade saved.'); }
+      catch(error){onError('Grade could not save',error.message);}
+    });
+    screenMenu(query('#level-options'),[{key:'chapters',label:'Choose chapter',node:query('#chapter-screen')},
+      {key:'options',label:'Material options',node:query('#material-options')}]);
   }
   function openWorkbook(page) {
     const blob = activePack?.assets['workbook.pdf'];
@@ -207,7 +199,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       const saved = latestStop(getState().records, materialId);
       query('#saved-stop').textContent = saved?.cardId === card.id ? 'Saved stopping point · ' + date(saved.createdAt) : '';
       // This URL supports browsing back to a card. Only End lesson here writes a learning record.
-      history.replaceState(null, '', '#lesson/' + materialId + '/' + chapter.id + '/' + card.id);
+      history.replaceState(history.state, '', '#lesson/' + materialId + '/' + chapter.id + '/' + card.id);
     }
     function step(amount) {
       index = Math.max(0, Math.min(chapter.cards.length - 1, index + amount));
@@ -272,6 +264,15 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       '<p id="result-error" class="form-error" role="alert"></p><button class="btn primary" type="submit">' +
       (saveStop ? 'Save stopping point and results' : 'Save chapter results') + '</button></form>');
     const form = document.querySelector('#lesson-results');
+    const studentForms=Array.from(form.querySelectorAll('.child-result'));
+    if(studentForms.length>1){
+      const label=document.createElement('label'),select=document.createElement('select');
+      label.textContent='Choose a student to score';label.append(select);form.prepend(label);
+      people().forEach((p,i)=>select.add(new Option(p.name,i)));
+      const showStudent=()=>studentForms.forEach((node,i)=>node.hidden=i!==select.selectedIndex);
+      select.onchange=showStudent;showStudent();
+      studentForms.forEach((node,i)=>node.addEventListener('invalid',()=>{select.selectedIndex=i;showStudent();},true));
+    }
     form.oninput = () => {
       people().forEach((p, i) => {
         const earned = form.elements['earned-' + i].value, total = form.elements['total-' + i].value;
@@ -326,47 +327,44 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     const packs = await listPacks();
     if (version !== routeVersion) return;
     const ps = people();
-    const childId = ps.some(p => p.childId === selectedChild) ? selectedChild : ps[0]?.childId;
-    main.innerHTML = title('Learning progress', 'Chapter results and attempts for each child.') +
-      '<div class="progress-options"><label>Learner<select id="progress-child">' +
-      ps.map(p => '<option value="' + escape(p.childId) + '"' + (p.childId === childId ? ' selected' : '') + '>' + escape(p.name) + '</option>').join('') +
-      '</select></label><label>Mastery target (%)<input id="mastery-target" type="number" min="1" max="100" step="1" value="' +
-      target() + '"></label>' + button('save-target', 'Save target') + '</div><div id="progress-body"></div>';
-    function draw() {
-      const currentChild = query('#progress-child').value;
-      query('#progress-body').innerHTML = packs.map(m => {
-        const rs = m.chapters.map(ch => result(currentChild, m.id, ch.id));
-        const mastered = rs.filter(r => r.mastered).length;
-        const covered = rs.filter(r => r.latest?.complete).length;
-        let unlocked = true;
-        return '<section class="progress-section"><h2>' + escape(m.title) + '</h2><p>' +
-          covered + ' of ' + m.chapters.length + ' chapters covered · ' + mastered + ' mastered</p>' +
-          '<progress value="' + mastered + '" max="' + m.chapters.length + '" aria-label="Mastered chapters"></progress>' +
-          '<div class="chapter-list">' + m.chapters.map((ch, i) => {
-            const r = rs[i], ready = unlocked;
-            unlocked = unlocked && r.mastered;
-            return '<article class="chapter-row"><div><h3>' + escape(ch.title) + '</h3><span class="status-pill ' +
-              (r.mastered ? 'mastered' : '') + '">' + r.status + '</span>' +
-              (r.percentage === null ? '' : '<strong class="chapter-percentage">' + r.latest.earned + '/' + r.latest.total + ' · ' + r.percentage + '%</strong>') +
-              '<small class="chapter-pages">Workbook pages ' + ch.startPage + '–' + ch.endPage + '</small>' +
-              (r.attempts.length ? '<details class="attempt-history"><summary>' + r.attempts.length + ' saved attempt' +
-                (r.attempts.length === 1 ? '' : 's') + '</summary>' + r.attempts.slice().reverse().map(a =>
-                  '<p>' + date(a.createdAt) + ' · ' + (a.total ? a.earned + '/' + a.total : 'Score pending') +
-                  (a.notes ? ' · ' + escape(a.notes) : '') + '</p>').join('') + '</details>' : '') +
-              '</div><a class="btn" href="#lesson/' + m.id + '/' + ch.id + '">' +
-              (r.mastered ? 'Review' : ready ? 'Continue learning' : 'Parent access') + '</a></article>';
-          }).join('') + '</div></section>';
-      }).join('') || '<div class="empty">Open the matching lesson packs to see their chapters here. Existing scores remain in your learning backup.</div><a class="btn" href="#level/k5-phonics-a">Open a lesson pack</a>';
+    if (!selectedChild) {
+      main.innerHTML=title('Progress','Choose a student to see their results.')+'<div class="screen-menu">'+
+        ps.map(p=>rowLink('#learning-progress/'+encodeURIComponent(p.childId),p.name,p.grade || p.level)).join('')+
+        rowLink('#learners','Learning plans')+rowLink('#settings/students','Manage students')+'</div>';
+      return;
     }
-    draw();
-    listen(query('#progress-child'), 'change', draw);
-    listen(query('#save-target'), 'click', async () => {
-      const value = Number(query('#mastery-target').value);
-      if (!Number.isInteger(value) || value < 1 || value > 100) return toast('Choose a whole percentage from 1 to 100.');
-      try { await mutate(s => { s.settings.masteryTarget = value; }); draw(); toast('Mastery target saved.'); }
-      catch (error) { onError('Target could not save', error.message); }
+    const child=ps.find(p=>p.childId===selectedChild);
+    if(!child){main.innerHTML=title('Student unavailable','')+rowLink('#learning-progress','Choose a student');return;}
+    main.innerHTML=title(child.name,'Learning progress')+
+      '<div id="progress-screens"><section id="progress-chapters" class="card stack"><h2>Chapter progress</h2>'+
+      (packs.length?'<label>Material<select id="progress-material"></select></label><p id="progress-total"></p><label>Chapter<select id="progress-chapter"></select></label><div id="chapter-result"></div>':
+      '<p>No lesson packs on this device yet.</p>'+rowLink('#downloads','Open Downloads'))+'</section>'+
+      '<section id="target-screen" class="card stack"><label>Mastery target (%)<input id="mastery-target" type="number" min="1" max="100" value="'+target()+'"></label>'+
+      button('save-target','Save target')+'</section></div>';
+    if (packs.length) {
+      const materials=query('#progress-material'), chapters=query('#progress-chapter');
+      materials.replaceChildren(...packs.map(m=>new Option(m.title,m.id)));
+      function draw(changed) {
+        const m=packs.find(p=>p.id===materials.value);
+        if(changed)chapters.replaceChildren(...m.chapters.map(ch=>new Option(ch.title,ch.id)));
+        const results=m.chapters.map(ch=>result(child.childId,m.id,ch.id));
+        query('#progress-total').textContent=results.filter(r=>r.latest?.complete).length+' of '+m.chapters.length+' covered · '+results.filter(r=>r.mastered).length+' mastered';
+        const i=chapters.selectedIndex, ch=m.chapters[i], r=results[i];
+        query('#chapter-result').innerHTML='<p>'+escape(r.status)+(r.percentage!==null?' · '+r.percentage+'%':'')+'</p>'+
+          rowLink('#lesson/'+m.id+'/'+ch.id,r.mastered?'Review chapter':'Open chapter')+
+          (r.attempts.length?'<details><summary>Saved attempts ('+r.attempts.length+')</summary>'+r.attempts.slice().reverse().map(a=>'<p>'+date(a.createdAt)+' · '+(a.total?a.earned+'/'+a.total:'Score pending')+(a.notes?' · '+escape(a.notes):'')+'</p>').join('')+'</details>':'');
+      }
+      listen(materials,'change',()=>draw(true));listen(chapters,'change',()=>draw(false));draw(true);
+    }
+    listen(query('#save-target'),'click',async()=>{
+      const value=Number(query('#mastery-target').value);
+      if(!Number.isInteger(value)||value<1||value>100)return toast('Choose a whole percentage from 1 to 100.');
+      try{await mutate(s=>{s.settings.masteryTarget=value;});await progress(selectedChild);toast('Mastery target saved.');}
+      catch(error){onError('Target could not save',error.message);}
     });
+    screenMenu(query('#progress-screens'),[{key:'results',label:'Chapter progress',node:query('#progress-chapters')},
+      {key:'target',label:'Mastery target',node:query('#target-screen')}]);
   }
-  return { reset, subjects, subject, level, player, progress };
+  return { reset, downloads, subjects, subject, level, player, progress };
 }
 

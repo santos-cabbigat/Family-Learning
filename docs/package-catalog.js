@@ -11,6 +11,25 @@ function validPackageUrl(value) {
 }
 
 const validId = value => typeof value === 'string' && /^[a-z0-9-]+$/.test(value);
+// Personal shortcuts stay in this browser. ZIP data is requested only after a Download tap.
+const privateKey = 'family-learning-personal-pack-links';
+function privateLinks() {
+  try { return JSON.parse(localStorage.getItem(privateKey) || '[]').filter(validPrivate); }
+  catch { return []; }
+}
+function validPrivate(item) {
+  return item && validId(item.id) && typeof item.file === 'string' && /^[a-zA-Z0-9_-]{12,128}$/.test(item.file) &&
+    SUBJECTS.includes(item.subject) && typeof item.title === 'string' && item.title.length > 0 && item.title.length <= 140;
+}
+export function rememberDownloadLink(hash) {
+  if (!hash.startsWith('#downloads?')) return;
+  const params = new URLSearchParams(hash.slice(hash.indexOf('?')+1));
+  const item = {id:params.get('pack'), file:params.get('file'), title:params.get('name'), subject:params.get('subject')};
+  if (!validPrivate(item)) return;
+  const items = privateLinks().filter(existing => existing.id !== item.id);
+  try { localStorage.setItem(privateKey,JSON.stringify([...items.slice(-49),item])); } catch { return; }
+  return item;
+}
 async function publishedMaterials() {
   const response = await fetch('./catalog.json', {cache:'no-store', signal:AbortSignal.timeout(12000)});
   if (!response.ok) throw new Error('Catalog unavailable');
@@ -45,13 +64,14 @@ export async function mountDownloads(panel, options) {
     <label>Choose a material<select class="material-select"></select></label>
     <div class="actions"><button class="btn primary material-action" type="button"></button>
     <button class="btn material-import" type="button">Add lesson pack ZIP</button></div>
-    <p class="material-status muted" role="status" aria-live="polite"></p>
+    <div class="material-recovery actions" hidden></div><p class="material-status muted" role="status" aria-live="polite"></p>
     <p class="material-source muted"></p>`;
   const selector = panel.querySelector('select');
   const action = panel.querySelector('.material-action');
   const add = panel.querySelector('.material-import');
   const status = panel.querySelector('.material-status');
   const source = panel.querySelector('.material-source');
+  const recovery = panel.querySelector('.material-recovery');
   const materials = new Map();
   const local = new Set(installed.map(pack => pack.id));
   let installing = false;
@@ -60,7 +80,7 @@ export async function mountDownloads(panel, options) {
   function include(item) {
     if (!validId(item.id) || materials.has(item.id)) return;
     const assigned = materialGrade(records, item);
-    const legacyDrive = Boolean(item.driveId);
+    const legacyDrive = Boolean(item.driveId || item.file);
     if (subject && item.subject !== subject && !(legacyDrive && !item.subject)) return;
     if (grade !== 'All grades' && assigned !== grade && !(legacyDrive && assigned === 'Unassigned')) return;
     materials.set(item.id, {...item, grade:assigned});
@@ -69,8 +89,8 @@ export async function mountDownloads(panel, options) {
     const previous = chosenId || selector.value;
     selector.replaceChildren();
     for (const item of materials.values()) {
-      const state = local.has(item.id) ? 'Ready on this device' : item.driveId ? 'My Drive' : 'Available';
-      selector.add(new Option([item.title,item.grade,state].join(' · '), item.id));
+      const state = local.has(item.id) ? 'Ready on this device' : (item.driveId || item.file) ? 'My Drive' : 'Available';
+      selector.add(new Option([item.title,item.subject,item.grade === 'Unassigned' ? '' : item.grade,state].filter(Boolean).join(' · '), item.id));
     }
     if (materials.has(previous)) selector.value = previous;
     const item = materials.get(selector.value);
@@ -92,6 +112,7 @@ export async function mountDownloads(panel, options) {
       if (panel.isConnected) await refresh(pack.id);
     } catch (error) {
       status.textContent = error.message || 'Download failed. Try again.';
+      if (expected.file && panel.isConnected) showPrivateImport(expected);
     } finally {
       installing = false;
       if (panel.isConnected) draw();
@@ -111,16 +132,36 @@ export async function mountDownloads(panel, options) {
     };
     input.click();
   }
+  function showPrivateImport(expected) {
+    const link = document.createElement('a');
+    link.className = 'btn primary';
+    link.href = 'https://drive.google.com/file/d/' + encodeURIComponent(expected.file) + '/view';
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = 'Get ZIP from My Drive';
+    const importButton = document.createElement('button');
+    importButton.type = 'button';
+    importButton.className = 'btn';
+    importButton.textContent = 'Select downloaded ZIP';
+    importButton.onclick = () => pickFile(expected);
+    recovery.replaceChildren(link,importButton);
+    recovery.hidden = false;
+    status.textContent = 'For first use, save the ZIP from your Drive, then select it here. It will appear in '+expected.subject+'.';
+  }
   function optionsFor(item = {}) {
     const assigned = GRADES.includes(item.grade) ? item.grade : GRADES.includes(grade) ? grade : undefined;
-    return {id:item.id, subject:item.subject || subject, grade:assigned};
+    return {id:item.id, file:item.file, subject:item.subject || subject, grade:assigned};
   }
   add.onclick = () => pickFile(optionsFor());
-  selector.onchange = () => { chosenId = selector.value; status.textContent = ''; draw(); };
+  selector.onchange = () => { chosenId = selector.value; recovery.hidden = true; status.textContent = ''; draw(); };
   action.onclick = () => {
     const item = materials.get(selector.value);
     if (!item || installing) return;
     if (local.has(item.id)) { location.hash = 'level/' + encodeURIComponent(item.id); return; }
+    if (item.file) {
+      if (!isConnected()) { showPrivateImport(optionsFor(item)); return; }
+      install(() => downloadLessonPack(item.file), optionsFor(item)); return;
+    }
     if (item.driveId) { install(() => downloadLessonPack(item.driveId), optionsFor(item)); return; }
     const url = new URL(item.url, location.href);
     if (url.origin !== location.origin) {
@@ -147,17 +188,14 @@ export async function mountDownloads(panel, options) {
         subject:properties.subject, driveId:file.id});
     }
   }
+  privateLinks().forEach(include);
   if (catalog.status === 'fulfilled') catalog.value.forEach(include);
   remoteLoading = false;
   draw();
   const hints = [];
   if (drive.status === 'rejected') hints.push('Your Drive list could not load. Reconnect in Google Drive settings and reopen Subjects.');
   if (catalog.status === 'rejected') hints.push('The online catalog could not load.');
-  if (!connected) {
-    hints.push('Connect Google Drive in Settings to see lesson packs you backed up with Family Learning.');
-  } else if (drive.status === 'fulfilled' && !drive.value.length) {
-    hints.push('Your connected Drive has no lesson packs backed up by Family Learning yet.');
-  }
-  hints.push('For a ZIP already in your files or personal Drive, choose Add lesson pack ZIP. Pick a grade first to file an ungraded pack there.');
+  if (!materials.size) hints.push('No available packs for this grade and subject. Choose another filter or add your ZIP.');
+  if (materials.size && !local.size) hints.push('Downloaded lessons appear automatically in Subjects.');
   source.textContent = hints.join(' ');
 }

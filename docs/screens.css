@@ -1,0 +1,48 @@
+@media screen {
+  body{background:#f3f6f1}
+  body .app-shell{display:block;min-height:100dvh}
+  .app-shell .sidebar{position:fixed;inset:auto 0 0;display:block;z-index:8;background:#f9fbf8;border:0;border-top:1px solid #d8e1d6;padding:4px max(8px,env(safe-area-inset-right)) calc(5px + env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left))}
+  .sidebar .brand,.sidebar>.eyebrow,.sidebar .sidebar-foot,.page-footer{display:none}
+  #navigation{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));max-width:700px;margin:0 auto;gap:3px}
+  #navigation a{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:3px;min-height:48px;font-size:12px;padding:4px;border-radius:14px;text-align:center}
+  #navigation .nav-icon{width:20px;height:20px}
+  .workspace{padding-bottom:calc(72px + env(safe-area-inset-bottom))}
+  .workspace .topbar{position:sticky;top:0;z-index:6;display:block;min-height:0;background:#f8fbf7;padding:5px max(12px,env(safe-area-inset-left));border-bottom:1px solid var(--line)}
+  .app-toolbar{max-width:760px;margin:auto;min-height:46px;display:flex;align-items:center;gap:12px}
+  .app-brand{color:var(--green);display:flex;align-items:center;gap:8px;text-decoration:none;font-size:16px;font-weight:650}
+  #app-back{background:#e4eee2;border:0;border-radius:24px;color:var(--green);padding:8px 13px;min-height:44px;font-weight:600}
+  .app-toolbar .backup-badge{margin-left:auto;text-align:right;font-size:11px}
+  .workspace main{width:100%;max-width:790px;margin:auto;padding:22px clamp(14px,3vw,28px) 28px}
+  main>.settings-back, main>.text-link:first-child{display:none}
+  .page-heading{margin:0 0 18px;align-items:center}
+  .page-heading h1{font:650 clamp(25px,4vw,33px)/1.22 system-ui,sans-serif;letter-spacing:-.8px}
+  .page-heading p:empty{display:none}
+  .grid,.grid.three{grid-template-columns:1fr}
+  .screen-menu,.settings-list{border:1px solid var(--line);background:var(--paper);border-radius:16px;overflow:hidden}
+  .screen-menu:empty{display:none}
+  .screen-menu+.screen-menu,.screen-menu+div>.screen-menu{margin-top:12px}
+  .screen-row{width:100%;border:0;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--paper);color:var(--green);padding:16px;min-height:56px;text-decoration:none;text-align:left;font:600 15px/1.4 system-ui,sans-serif}
+  .screen-row + .screen-row{border-top:1px solid var(--line)}
+  .screen-row:hover,.screen-row:focus-visible{background:#edf3e9}
+  .screen-row strong,.screen-row small{display:block}
+  .screen-row small{font-size:12px;font-weight:450;margin-top:2px;color:var(--muted)}
+  .screen-row>span:last-child:not(:first-child){flex:none;font-size:23px;color:#65816b}
+  .screen-group-title{font:600 14px/1.3 system-ui,sans-serif;margin:22px 0 8px}
+  .settings-menu,.settings-detail{max-width:none}
+  .settings-menu{display:grid;gap:14px}
+  .settings-group{margin:0}.settings-row{min-height:56px;padding:12px 14px}
+  .card{border-radius:16px}.actions{gap:8px}.btn,.btn.small{min-height:44px}
+  .download-filters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .download-filters label,.chapter-search{min-width:0;margin:0 0 12px}
+  .subject-materials .material-status:empty,.subject-materials .material-source:empty{display:none}
+  .setup-guide{gap:12px}.setup-guide>section:not([hidden]),.setup-guide>article:not([hidden]){min-width:0}
+  .setup-guide .setup-step{scroll-margin-top:68px}
+  .setup-guide .setup-step h2{font-size:20px}.setup-guide .setup-sources:not([hidden]){display:block}
+  .stack>[hidden],[hidden]{display:none!important}
+  dialog{max-height:calc(90dvh - env(safe-area-inset-bottom));overflow:auto;overscroll-behavior:contain}
+  #toast{bottom:calc(75px + env(safe-area-inset-bottom))}
+  .lesson-presentation .workspace{padding:0}.lesson-presentation .sidebar,.lesson-presentation .topbar{display:none}
+  .lesson-presentation .workspace main{padding:0;max-width:none}
+  @media(max-width:420px){.app-toolbar{gap:6px}.app-brand{font-size:14px}.app-brand img{width:22px;height:22px}.app-toolbar .backup-badge{max-width:95px}.screen-row{padding:14px}.download-filters{gap:8px}}
+}
+@media print{.screen-menu,.app-toolbar{display:none!important}}
