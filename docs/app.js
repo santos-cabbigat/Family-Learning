@@ -1,6 +1,6 @@
 import {driveGuide} from './drive-guide.js';
 import {listPacks,exportPack,importPack} from './lesson-store.js';
-import {GRADES,activeStudents,currentProfiles,rosterChanges} from './students.js';
+import {GRADES,activeStudents,currentProfiles,rosterChanges,materialGrade} from './students.js';
 import {APP_URL,REPOSITORY_URL,isOfficialWeb,compareVersions,waitForInstall} from './release.js';
 import {createLessons} from './lessons.js';
 import {installationPage,beginInstall,installationBanner} from './install.js';
@@ -63,8 +63,8 @@ async function managePacks(upload){
   if(!navigator.onLine)throw new Error('Connect to the internet, then retry.');
   if(!isConnected())throw new Error('Connect your Google Drive account first.');
   $('#backup-packs').disabled=true;$('#list-drive-packs').disabled=true;
-  if(upload){const packs=await listPacks();if(!packs.length)throw new Error('Open a lesson pack on this device first.');for(const manifest of packs)await uploadLessonPack(manifest,await exportPack(manifest.id),report);report(packs.length+' lesson pack(s) verified in your Google Drive.');}
-  else {report('Reading your lesson pack list…');const packs=await availableLessonPacks();if(!$('#drive-pack-list'))return;$('#drive-pack-list').innerHTML=packs.map(p=>`<div class="row"><span>${escape(p.name)} · ${bytes(Number(p.size)||0)}</span><button class="btn small" data-download-pack="${escape(p.id)}">Download to this device</button></div>`).join('');report(packs.length?'Choose the packs you want offline.':'No lesson packs backed up by this app yet. Import a ZIP first, then back up installed lesson packs.');document.querySelectorAll('[data-download-pack]').forEach(b=>b.onclick=async()=>{if(busy)return;busy=true;b.disabled=true;try{report('Downloading lesson pack…');const blob=await downloadLessonPack(b.dataset.downloadPack);const manifest=await importPack(blob);report(manifest.title+' is ready offline on this device.');b.textContent='Ready on this device';}catch(error){report(error.message);b.disabled=false;}finally{busy=false;}});}
+  if(upload){const packs=await listPacks();if(!packs.length)throw new Error('Open a lesson pack on this device first.');for(const manifest of packs)await uploadLessonPack({...manifest,grade:materialGrade(state.records,manifest)},await exportPack(manifest.id),report);report(packs.length+' lesson pack(s) verified in your Google Drive.');}
+  else {report('Reading your lesson pack list…');const packs=await availableLessonPacks();if(!$('#drive-pack-list'))return;$('#drive-pack-list').innerHTML=packs.map(p=>`<div class="row"><span>${escape(p.name)} · ${bytes(Number(p.size)||0)}</span><button class="btn small" data-download-pack="${escape(p.id)}">Download to this device</button></div>`).join('');report(packs.length?'Choose the packs you want offline.':'No lesson packs backed up by this app yet. Import a ZIP first, then back up installed lesson packs.');document.querySelectorAll('[data-download-pack]').forEach(b=>b.onclick=async()=>{if(busy)return;busy=true;b.disabled=true;try{report('Downloading lesson pack…');const blob=await downloadLessonPack(b.dataset.downloadPack);const savedPack=packs.find(item=>item.id===b.dataset.downloadPack);const properties=savedPack?.appProperties || {};const manifest=await importPack(blob,{id:properties.material,grade:properties.grade,subject:properties.subject});report(manifest.title+' is ready offline on this device.');b.textContent='Ready on this device';}catch(error){report(error.message);b.disabled=false;}finally{busy=false;}});}
  }catch(error){report(error.message);}finally{busy=false;if($('#backup-packs'))$('#backup-packs').disabled=!isConnected();if($('#list-drive-packs'))$('#list-drive-packs').disabled=!isConnected();}
 }
 function studentSettings(){

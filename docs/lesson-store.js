@@ -28,7 +28,7 @@ export async function listPacks() {
     request.onerror = () => reject(request.error);
   });
 }
-export async function importPack(file) {
+export async function importPack(file, expected = {}) {
   if (!file || file.size > 100 * 1024 * 1024) throw new Error('Choose a lesson pack smaller than 100 MB.');
   const bytes = new Uint8Array(await file.arrayBuffer());
   let total = 0;
@@ -47,6 +47,12 @@ export async function importPack(file) {
   try { manifest = JSON.parse(new TextDecoder().decode(files['manifest.json'])); }
   catch { throw new Error('Choose a prepared Family Learning lesson pack ZIP. A workbook PDF alone is not a lesson pack.'); }
   validatePack(manifest, files);
+  if (expected.id && expected.id !== manifest.id) throw new Error('The downloaded pack does not match the selected material.');
+  if (expected.subject && expected.subject !== manifest.subject) throw new Error('This pack belongs to ' + manifest.subject + '. Open that subject to add it.');
+  if (expected.grade && manifest.grade && expected.grade !== manifest.grade && !expected.id) {
+    throw new Error('This pack is filed under ' + manifest.grade + '. Choose that grade or All grades and try again.');
+  }
+  if (expected.grade) manifest.grade = expected.grade;
   const assets = {};
   for (const [path, value] of Object.entries(files)) {
     if (path === 'manifest.json') continue;

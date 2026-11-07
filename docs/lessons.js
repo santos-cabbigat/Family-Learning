@@ -17,6 +17,14 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
   const query = selector => main.querySelector(selector);
   const people = () => activeStudents(getState().records);
   let gradeFilter='All grades';
+  try {
+    const saved = localStorage.getItem('family-learning-subject-grade');
+    if ([...GRADES,'Unassigned'].includes(saved)) gradeFilter = saved;
+  } catch {}
+  function selectGrade(value) {
+    gradeFilter = value;
+    try { localStorage.setItem('family-learning-subject-grade', value); } catch {}
+  }
   const grades=()=>['All grades',...GRADES,'Unassigned'];
   const gradeControl=()=>'<label class="chapter-search">Grade level<select id="grade-filter">'+grades().map(g=>'<option'+(g===gradeFilter?' selected':'')+'>'+g+'</option>').join('')+'</select></label>';
   const matchesGrade=p=>gradeFilter==='All grades'||materialGrade(getState().records,p)===gradeFilter;
@@ -70,42 +78,44 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       '<div class="actions">'+button('choose-pack', 'Open lesson pack', true)+'<a class="btn" href="#settings/backup">My Drive lesson packs</a></div>' +
       '<p class="muted">Import once per device for offline use. Your scores are separate from the pack. Use materials you own or have permission to use.</p></article>';
   }
-  async function subjects() {
-    const version = reset();
-    loading();
-    const packs = await listPacks();
-    if (version !== routeVersion) return;
-    main.innerHTML = title('Learning subjects', 'Choose a grade, subject, then a material level.') + gradeControl() +
-      '<div class="subject-grid">' + SUBJECTS.map(subject => {
-        const count = packs.filter(p => p.subject === subject&&matchesGrade(p)).length;
-        return '<a class="card subject-tile" href="#subject/' + encodeURIComponent(subject) + '"><h2>' + subject +
-          '</h2><p class="muted">' + (count ? count + ' level ready' : subject === 'Phonics' ? 'Level A lesson pack' : 'Your materials') + '</p><span aria-hidden="true">→</span></a>';
-      }).join('') + '</div><div class="actions lesson-secondary"><a class="btn" href="#library">Other teaching materials</a><a class="btn" href="#learning-progress">View progress</a>'+button('choose-pack','Open lesson pack')+'</div>';
-    listen(query('#choose-pack'),'click',choosePack);
-    listen(query('#grade-filter'),'change',e=>{gradeFilter=e.target.value;subjects();});
-    mountDownloads(main,()=>{});
-
+  function materialPanel(packs, name, selectedId, refresh) {
+    const panel = main.querySelector('.subject-materials');
+    mountDownloads(panel, {grade:gradeFilter, subject:name, records:getState().records, installed:packs, selectedId, refresh})
+      .catch(error => { if (panel.isConnected) panel.textContent = 'Could not open materials. ' + error.message; });
   }
-  async function subject(name) {
+  async function subjects(selectedId) {
     const version = reset();
     loading();
     const packs = await listPacks();
     if (version !== routeVersion) return;
-    const matching = packs.filter(p => p.subject === name&&matchesGrade(p));
-    const aliases={'Mathematics':'Math','Reading comprehension':'Reading Comprehension','Phonetics':'Phonics'};
-    const resources=getState().records.filter(r=>r.kind==='course'&&(aliases[r.subject]||r.subject).toLowerCase()===name?.toLowerCase()&&(gradeFilter==='All grades'||(r.grade||'Unassigned')===gradeFilter));
-    main.innerHTML = '<a class="text-link" href="#subjects">All subjects</a>' + title(name, 'Choose a level to teach or review.') + gradeControl() +
-      '<div class="grid">' + matching.map(p => '<a class="card subject-tile" href="#level/' + p.id +
-        '"><h2>' + escape(p.level) + '</h2><p>' + escape(p.title) + '</p><p class="muted">' +
-        p.chapters.length + ' chapters · Ready on this device</p></a>').join('') + '</div>';
-    if(resources.length) main.innerHTML += '<h2 class="lesson-secondary">Teaching materials</h2><div class="grid">'+resources.map(r=>'<a class="card subject-tile" href="#book/'+encodeURIComponent(r.id)+'"><h3>'+escape(r.title)+'</h3><p>'+escape(r.level)+'</p></a>').join('')+'</div>';
-    if (!packs.some(p=>p.subject===name)) {
-      main.innerHTML += installPanel();
-      listen(query('#choose-pack'), 'click', choosePack);
-    } else if (!matching.length && !resources.length) {
-      main.innerHTML += '<div class="empty">This subject is ready for its learning materials.</div><a class="btn" href="#library">Browse existing materials</a>';
-    }
-    listen(query('#grade-filter'),'change',e=>{gradeFilter=e.target.value;subject(name);});
+    main.innerHTML = title('Learning subjects', 'Choose a grade to download or open a material.') + gradeControl() +
+      '<section class="card stack subject-materials" aria-label="Materials by grade"></section>' +
+      '<div class="subject-grid">' + SUBJECTS.map(subject => {
+        const count = packs.filter(pack => pack.subject === subject && matchesGrade(pack)).length;
+        return '<a class="card subject-tile" href="#subject/' + encodeURIComponent(subject) + '"><h2>' + escape(subject) +
+          '</h2><p class="muted">' + count + ' ready on this device</p></a>';
+      }).join('') + '</div><div class="actions lesson-secondary"><a class="btn" href="#library">Other teaching materials</a><a class="btn" href="#learning-progress">View progress</a></div>';
+    listen(query('#grade-filter'), 'change', event => { selectGrade(event.target.value); subjects(); });
+    materialPanel(packs, undefined, selectedId, subjects);
+  }
+  async function subject(name, selectedId) {
+    const version = reset();
+    loading();
+    const packs = await listPacks();
+    if (version !== routeVersion) return;
+    const matching = packs.filter(pack => pack.subject === name && matchesGrade(pack));
+    const aliases = {Mathematics:'Math','Reading comprehension':'Reading Comprehension',Phonetics:'Phonics'};
+    const resources = getState().records.filter(r => r.kind === 'course' &&
+      (aliases[r.subject] || r.subject).toLowerCase() === name?.toLowerCase() &&
+      (gradeFilter === 'All grades' || (r.grade || 'Unassigned') === gradeFilter));
+    main.innerHTML = '<a class="text-link" href="#subjects">All subjects</a>' + title(name, 'Choose a material to download or open.') +
+      gradeControl() + '<section class="card stack subject-materials" aria-label="Subject materials"></section>' +
+      '<div class="grid">' + matching.map(pack => '<a class="card subject-tile" href="#level/' + encodeURIComponent(pack.id) +
+        '"><h2>' + escape(pack.title) + '</h2><p>' + escape(pack.level) + ' · ' + pack.chapters.length + (pack.chapters.length === 1 ? ' chapter' : ' chapters') +
+        '</p><small>Ready on this device</small></a>').join('') + '</div>';
+    if (resources.length) main.insertAdjacentHTML('beforeend','<h2 class="lesson-secondary">Teaching materials</h2><div class="grid">'+resources.map(r=>'<a class="card subject-tile" href="#book/'+encodeURIComponent(r.id)+'"><h3>'+escape(r.title)+'</h3><p>'+escape(r.level)+'</p></a>').join('')+'</div>');
+    listen(query('#grade-filter'), 'change', event => { selectGrade(event.target.value); subject(name); });
+    materialPanel(packs, name, selectedId, id => subject(name, id));
   }
   async function level(id) {
     const version = reset();

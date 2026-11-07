@@ -50,3 +50,22 @@ test('cancelled account switching clears the previous account session',async()=>
  window.google.accounts.oauth2.initTokenClient=({error_callback})=>({requestAccessToken:()=>error_callback({type:'popup_closed'})});
  await assert.rejects(drive.connectDrive(),/closed or blocked/);assert.equal(drive.isConnected(),false);
 });
+
+test('a verified legacy lesson backup gains its grade and subject without uploading the ZIP again', async () => {
+  const zip = new Blob(['saved lesson pack']);
+  const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', await zip.arrayBuffer()))]
+    .map(value => value.toString(16).padStart(2,'0')).join('');
+  const prior = { app:'family-learning', type:'lesson-pack', material:'phonics-a', sha256:hash };
+  const updates = [];
+  const drive = await setup((url, options) => {
+    if (options.method === 'PATCH') {
+      updates.push(JSON.parse(options.body).appProperties);
+      return Response.json({id:'existing'});
+    }
+    assert.ok(url.includes('pageSize='), 'Only the listing and metadata update are needed');
+    return Response.json({files:[{id:'existing',appProperties:prior}]});
+  });
+  const id = await drive.uploadLessonPack({id:'phonics-a',title:'Phonics A',subject:'Phonics',grade:'Grade 1'},zip,()=>{});
+  assert.equal(id,'existing');
+  assert.deepEqual(updates,[{...prior,grade:'Grade 1',subject:'Phonics'}]);
+});

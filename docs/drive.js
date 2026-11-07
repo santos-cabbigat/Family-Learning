@@ -65,10 +65,19 @@ export async function uploadLessonPack(manifest,blob,progress){
  if(blob.size>100*1024*1024)throw new Error('This pack is larger than the 100 MB limit.');
  const checksum=[...new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))].map(b=>b.toString(16).padStart(2,'0')).join('');
  const existing=(await availableLessonPacks()).find(f=>f.appProperties?.sha256===checksum&&f.appProperties?.material===manifest.id);
- if(existing){progress(manifest.title+' is already backed up.');return existing.id;}
+ const classification = {};
+ if (manifest.grade) classification.grade = manifest.grade;
+ if (manifest.subject) classification.subject = manifest.subject;
+ if(existing){
+  if (Object.entries(classification).some(([key,value]) => existing.appProperties?.[key] !== value)) {
+    await request(API+'/'+encodeURIComponent(existing.id), {method:'PATCH',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({appProperties:{...existing.appProperties,...classification}})});
+  }
+  progress(manifest.title+' is already backed up.');return existing.id;
+ }
  const folders=await listFiles(appQuery+" and mimeType = 'application/vnd.google-apps.folder' and appProperties has { key='type' and value='materials-folder' }");
  let folder=folders[0];if(!folder)folder=await request(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Family Learning Materials',mimeType:'application/vnd.google-apps.folder',appProperties:{app:'family-learning',type:'materials-folder'}})});
- const metadata={name:manifest.title+' - Lesson Pack.zip',mimeType:'application/zip',parents:[folder.id],appProperties:{app:'family-learning',type:'lesson-pack',material:manifest.id,sha256:checksum}};
+ const metadata={name:manifest.title+' - Lesson Pack.zip',mimeType:'application/zip',parents:[folder.id],appProperties:{app:'family-learning',type:'lesson-pack',material:manifest.id,sha256:checksum,...classification}};
  const boundary='family_learning_'+uid();const body=new Blob([`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,JSON.stringify(metadata),`\r\n--${boundary}\r\nContent-Type: application/zip\r\n\r\n`,blob,`\r\n--${boundary}--`],{type:`multipart/related; boundary=${boundary}`});
  progress('Uploading '+manifest.title+'…');const saved=await request('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',body});
  progress('Verifying '+manifest.title+'…');const verified=await request(`${API}/${encodeURIComponent(saved.id)}?fields=sha256Checksum,size`);

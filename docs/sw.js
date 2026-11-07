@@ -1,6 +1,6 @@
-const CACHE='family-learning-0.3.4-drive-guide-links';
+const CACHE='family-learning-0.3.5-drive-guide-links';
 const BASE=new URL('./',self.location).pathname;
-const ASSETS=['','index.html','style.css','app.js','core.js','store.js','drive.js','drive-guide.js','install.js','manifest.webmanifest','icon.svg','icon-192.png','icon-512.png','config.json','release.js','students.js','lessons.js','learning-core.js','lesson-store.js','lessons.css','vendor/fflate.js'];
+const ASSETS=['','index.html','style.css','app.js','core.js','store.js','drive.js','drive-guide.js','install.js','manifest.webmanifest','icon.svg','icon-192.png','icon-512.png','config.json','release.js','students.js','lessons.js','learning-core.js','lesson-store.js','package-catalog.js','lessons.css','vendor/fflate.js'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS.map(p=>new Request(BASE+p,{cache:"reload"}))))));
 self.addEventListener('activate',event=>event.waitUntil((async()=>{for(const key of await caches.keys())if(key.startsWith('family-learning-')&&key!==CACHE)await caches.delete(key);await self.clients.claim();})()));
 self.addEventListener('message',event=>{if(event.data?.type==='APPLY_UPDATE')self.skipWaiting();});

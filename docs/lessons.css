@@ -90,3 +90,5 @@
   .presentation-toolbar, .card-reference, .presentation-controls, .presentation-save { display: none; }
   .teaching-card { max-height: none; height: 85vh; border: 0; box-shadow: none; }
 }
+
+.subject-materials{margin:16px 0;min-width:0}.subject-materials select{width:100%;min-width:0}.subject-materials p:empty{display:none}.subject-materials h2,.subject-materials p{margin:0}

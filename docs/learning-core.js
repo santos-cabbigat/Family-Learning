@@ -1,4 +1,4 @@
-export const SUBJECTS = ['Math', 'Grammar', 'Writing', 'Phonics', 'Reading Comprehension'];
+export const SUBJECTS = ['Math', 'Grammar', 'Writing', 'Phonics', 'Reading Comprehension', 'Science'];
 
 export function latestStop(records, materialId) {
   return records.filter(r => r.kind === 'lesson_stop' && r.materialId === materialId)

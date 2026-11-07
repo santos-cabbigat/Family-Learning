@@ -1,68 +1,144 @@
-import {importPack,listPacks} from './lesson-store.js';
+import {importPack} from './lesson-store.js';
+import {GRADES, materialGrade} from './students.js';
+import {SUBJECTS} from './learning-core.js';
+import {isConnected, availableLessonPacks, downloadLessonPack} from './drive.js';
 
-const safe = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const grades = ['Kindergarten','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6'];
-const subjects = ['Phonics','Math','Grammar','Writing','Reading Comprehension','Science'];
-function check(entry) {
-  return entry && /^[a-z0-9-]+$/.test(entry.id) &&
-    grades.includes(entry.grade) && subjects.includes(entry.subject) &&
-    typeof entry.title === 'string' && entry.title.length < 150 &&
-    typeof entry.url === 'string' && /^https:\/\//.test(entry.url);
-}
-async function catalog() {
-  const response = await fetch('./catalog.json', {cache:'no-store'});
-  if (!response.ok) throw new Error('Download catalog unavailable');
-  const data = await response.json();
-  if (data.version !== 1 || !Array.isArray(data.packages)) throw new Error('Invalid catalog');
-  return data.packages.filter(check);
-}
-export async function mountDownloads(container, refresh) {
-  const element = document.createElement('section');
-  element.className = 'card stack';
-  element.setAttribute('aria-label','Download learning packages');
-  container.append(element);
-  element.innerHTML = '<h2>Download subjects by grade</h2><p class="muted">Choose a grade, then download only the subjects you need. Installed packages remain on this device for offline learning.</p><p role="status">Checking published subjects…</p>';
+function validPackageUrl(value) {
   try {
-    const [items,installed] = await Promise.all([catalog(),listPacks()]);
-    if (!element.isConnected) return;
-    const installedIds = new Set(installed.map(p=>p.id));
-    const availableGrades = [...new Set([...grades.slice(0,2),...items.map(p=>p.grade)])];
-    element.innerHTML = '<h2>Download subjects by grade</h2><p class="muted">Only published materials can be downloaded. Each subject is installed separately and can be studied offline.</p><label>Grade <select id="package-grade">'+availableGrades.map(g=>'<option>'+safe(g)+'</option>').join('')+'</select></label><div id="published-packages"></div>';
-    const selector=element.querySelector('#package-grade'), listing=element.querySelector('#published-packages');
-    function draw(){
-      const selected=items.filter(p=>p.grade===selector.value);
-      listing.innerHTML=selected.length ? selected.map(p=>'<div class="settings-row"><span class="settings-label"><strong>'+safe(p.subject)+' — '+safe(p.title)+'</strong><small>'+safe(p.description||'Learning package')+'</small></span><button class="btn" data-package="'+safe(p.id)+'" '+(installedIds.has(p.id)?'disabled':'')+'>'+(installedIds.has(p.id)?'Installed':'Download')+'</button></div>').join('') : '<p class="muted">No public packages have been published for this grade yet. You can still import a Family Learning ZIP from your files.</p>';
-    }
-    selector.addEventListener('change',draw);
-    draw();
-    listing.addEventListener('click',async e=>{
-      const button=e.target.closest('button[data-package]');if(!button)return;
-      const item=items.find(p=>p.id===button.dataset.package);if(!item)return;
-      const original=button.textContent;button.disabled=true;button.textContent='Downloading…';
-      try {
-        const url=new URL(item.url,location.href);
-        if(url.origin!==location.origin){
-          // Google Drive public share links often do not allow browser CORS downloads.
-          // Let the parent save the ZIP with their browser, then use Open lesson pack.
-          window.open(item.url,'_blank','noopener,noreferrer');
-          button.textContent='Open lesson pack after saving';
-          button.disabled=false;
-          return;
-        }
-        const response=await fetch(url.href);
-        if(!response.ok)throw new Error('Download unavailable');
-        const blob=await response.blob();
-        if(blob.size>100*1024*1024)throw new Error('Package is too large');
-        const pack=await importPack(new File([blob],item.id+'.zip',{type:'application/zip'}));
-        if(pack.id!==item.id)throw new Error('Package ID does not match the catalog');
-        installedIds.add(item.id);draw();
-        refresh?.();
-      } catch(error) {
-        button.disabled=false;button.textContent=original;
-        alert('Could not install this package: '+error.message);
-      }
-    });
-  } catch(error) {
-    element.innerHTML='<h2>Download subjects by grade</h2><p role="alert">Could not check the package library. Your installed offline lessons are unchanged.</p>';
+    const url = new URL(value, location.href);
+    return url.protocol === 'https:' || (url.protocol === 'http:' && url.origin === location.origin);
+  } catch { return false; }
+}
+
+const validId = value => typeof value === 'string' && /^[a-z0-9-]+$/.test(value);
+async function publishedMaterials() {
+  const response = await fetch('./catalog.json', {cache:'no-store', signal:AbortSignal.timeout(12000)});
+  if (!response.ok) throw new Error('Catalog unavailable');
+  const catalog = await response.json();
+  if (catalog.version !== 1 || !Array.isArray(catalog.packages)) throw new Error('Invalid catalog');
+  return catalog.packages.filter(item => item && validId(item.id) && GRADES.includes(item.grade) &&
+    SUBJECTS.includes(item.subject) && typeof item.title === 'string' && typeof item.url === 'string' &&
+    item.url.trim() && validPackageUrl(item.url));
+}
+
+export async function mountDownloads(panel, {grade, subject, installed, records, refresh, selectedId}) {
+  panel.innerHTML = `<h2>Materials</h2>
+    <label>Choose a material<select class="material-select"></select></label>
+    <div class="actions"><button class="btn primary material-action" type="button"></button>
+    <button class="btn material-import" type="button">Add lesson pack ZIP</button></div>
+    <p class="material-status muted" role="status" aria-live="polite"></p>
+    <p class="material-source muted"></p>`;
+  const selector = panel.querySelector('select');
+  const action = panel.querySelector('.material-action');
+  const add = panel.querySelector('.material-import');
+  const status = panel.querySelector('.material-status');
+  const source = panel.querySelector('.material-source');
+  const materials = new Map();
+  const local = new Set(installed.map(pack => pack.id));
+  let installing = false;
+  let remoteLoading = true;
+  let chosenId = selectedId;
+  function include(item) {
+    if (!validId(item.id) || materials.has(item.id)) return;
+    const assigned = materialGrade(records, item);
+    const legacyDrive = Boolean(item.driveId);
+    if (subject && item.subject !== subject && !(legacyDrive && !item.subject)) return;
+    if (grade !== 'All grades' && assigned !== grade && !(legacyDrive && assigned === 'Unassigned')) return;
+    materials.set(item.id, {...item, grade:assigned});
   }
+  function draw() {
+    const previous = chosenId || selector.value;
+    selector.replaceChildren();
+    for (const item of materials.values()) {
+      const state = local.has(item.id) ? 'Ready on this device' : item.driveId ? 'My Drive' : 'Available';
+      selector.add(new Option([item.title,item.grade,state].join(' · '), item.id));
+    }
+    if (materials.has(previous)) selector.value = previous;
+    const item = materials.get(selector.value);
+    if (!item) selector.add(new Option(remoteLoading ? 'Checking available materials…' : 'No materials for this selection', ''));
+    selector.disabled = installing || !item;
+    action.hidden = !item;
+    action.disabled = installing;
+    action.textContent = local.has(item?.id) ? 'Open material' : 'Download';
+    add.disabled = installing;
+  }
+  async function install(readFile, expected) {
+    if (installing) return;
+    installing = true;
+    draw();
+    status.textContent = 'Saving the lesson pack on this device…';
+    try {
+      const file = await readFile();
+      const pack = await importPack(file, expected);
+      if (panel.isConnected) await refresh(pack.id);
+    } catch (error) {
+      status.textContent = error.message || 'Download failed. Try again.';
+    } finally {
+      installing = false;
+      if (panel.isConnected) draw();
+    }
+  }
+  function pickFile(expected) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.zip,application/zip,application/x-zip-compressed';
+    input.hidden = true;
+    panel.append(input);
+    input.oncancel = () => input.remove();
+    input.onchange = () => {
+      const file = input.files[0];
+      input.remove();
+      if (file) install(() => file, expected);
+    };
+    input.click();
+  }
+  function optionsFor(item = {}) {
+    const assigned = GRADES.includes(item.grade) ? item.grade : GRADES.includes(grade) ? grade : undefined;
+    return {id:item.id, subject:item.subject || subject, grade:assigned};
+  }
+  add.onclick = () => pickFile(optionsFor());
+  selector.onchange = () => { chosenId = selector.value; status.textContent = ''; draw(); };
+  action.onclick = () => {
+    const item = materials.get(selector.value);
+    if (!item || installing) return;
+    if (local.has(item.id)) { location.hash = 'level/' + encodeURIComponent(item.id); return; }
+    if (item.driveId) { install(() => downloadLessonPack(item.driveId), optionsFor(item)); return; }
+    const url = new URL(item.url, location.href);
+    if (url.origin !== location.origin) {
+      window.open(url.href,'_blank','noopener,noreferrer');
+      status.textContent = 'Save the ZIP, then select Add lesson pack ZIP to install it here.';
+      return;
+    }
+    install(async () => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error('The file could not be downloaded. Try again.');
+      return response.blob();
+    }, optionsFor(item));
+  };
+  installed.forEach(include);
+  draw();
+  const connected = isConnected();
+  const [catalog, drive] = await Promise.allSettled([publishedMaterials(), connected ? availableLessonPacks() : []]);
+  if (!panel.isConnected) return;
+  // Drive files are listed newest first. Prefer the user's saved copy over a published duplicate.
+  if (drive.status === 'fulfilled') {
+    for (const file of drive.value) {
+      const properties = file.appProperties || {};
+      include({id:properties.material, title:file.name.replace(/ - Lesson Pack\.zip$/i,''), grade:properties.grade,
+        subject:properties.subject, driveId:file.id});
+    }
+  }
+  if (catalog.status === 'fulfilled') catalog.value.forEach(include);
+  remoteLoading = false;
+  draw();
+  const hints = [];
+  if (drive.status === 'rejected') hints.push('Your Drive list could not load. Reconnect in Google Drive settings and reopen Subjects.');
+  if (catalog.status === 'rejected') hints.push('The online catalog could not load.');
+  if (!connected) {
+    hints.push('Connect Google Drive in Settings to see lesson packs you backed up with Family Learning.');
+  } else if (drive.status === 'fulfilled' && !drive.value.length) {
+    hints.push('Your connected Drive has no lesson packs backed up by Family Learning yet.');
+  }
+  hints.push('For a ZIP already in your files or personal Drive, choose Add lesson pack ZIP. Pick a grade first to file an ungraded pack there.');
+  source.textContent = hints.join(' ');
 }
