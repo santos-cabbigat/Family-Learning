@@ -51,7 +51,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     return chapterProgress(getState().records, childId, materialId, chapterId, target());
   }
   function installPanel() {
-    return '<div class="screen-menu">'+rowLink('#downloads','Open Downloads','Choose a material or add your lesson pack ZIP')+'</div>';
+    return '<p class="empty">Get this lesson pack in Settings → Downloads.</p>';
   }
   function materialPanel(packs, name, selectedId, refresh) {
     const panel = main.querySelector('.subject-materials');
@@ -84,11 +84,10 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     const packs = await listPacks();
     if (version !== routeVersion) return;
     main.innerHTML = title('Subjects','') + gradeControl() + '<div class="screen-menu">' +
-      rowLink('#downloads','Downloads','Get materials for any subject') +
       SUBJECTS.map(name => {
         const count = packs.filter(p => p.subject === name && matchesGrade(p)).length;
         return rowLink('#subject/'+encodeURIComponent(name),name,count+' ready on this device');
-      }).join('')+rowLink('#library','Teaching library','Your family’s own lessons') + '</div>';
+      }).join('') + '</div>';
     listen(query('#grade-filter'),'change',event => { selectGrade(event.target.value); subjects(); });
   }
   async function subject(name) {
@@ -104,9 +103,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     main.innerHTML = title(name,'')+gradeControl() + '<div class="screen-menu">' +
       matching.map(p => rowLink('#level/'+encodeURIComponent(p.id),p.title,'Ready on this device · '+p.chapters.length+' chapters')).join('') +
       resources.map(r => rowLink('#book/'+encodeURIComponent(r.id),r.title,'Teaching material')).join('')+
-      (!matching.length && !resources.length ? '<p class="empty">No materials saved here for this grade yet.</p>' : '')+
-      rowLink('#downloads','Downloads','Find materials for '+name)+'</div>';
-    listen(query('a[href="#downloads"]'),'click',()=>{downloadSubject=name;});
+      (!matching.length && !resources.length ? '<p class="empty">Get a lesson pack in Settings → Downloads. It will appear here once saved.</p>' : '')+'</div>';
     listen(query('#grade-filter'),'change',event => { selectGrade(event.target.value); subject(name); });
   }
   async function level(id) {
@@ -133,7 +130,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       '<a class="btn primary" id="teach-chapter">Teach chapter</a></section>'+
       '<section id="material-options" class="card stack"><h2>Material options</h2><label>Grade<select id="material-grade"><option value="">Choose grade</option>'+
       GRADES.map(g=>'<option'+(materialGrade(getState().records,m)===g?' selected':'')+'>'+g+'</option>').join('')+
-      '</select></label>'+button('save-material-grade','Save grade')+rowLink('#downloads','Open Downloads','Add an updated lesson pack')+'</section></div>';
+      '</select></label>'+button('save-material-grade','Save grade')+'</section></div>';
     const chapterSelect=query('#chapter-list'), teach=query('#teach-chapter');
     const selectChapter=()=>{teach.hidden=!chapterSelect.value;teach.href='#lesson/'+m.id+'/'+chapterSelect.value;};
     function filterChapters(term) {
@@ -338,7 +335,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     main.innerHTML=title(child.name,'Learning progress')+
       '<div id="progress-screens"><section id="progress-chapters" class="card stack"><h2>Chapter progress</h2>'+
       (packs.length?'<label>Material<select id="progress-material"></select></label><p id="progress-total"></p><label>Chapter<select id="progress-chapter"></select></label><div id="chapter-result"></div>':
-      '<p>No lesson packs on this device yet.</p>'+rowLink('#downloads','Open Downloads'))+'</section>'+
+      '<p>Get a lesson pack in Settings → Downloads to see chapter progress here.</p>')+'</section>'+
       '<section id="target-screen" class="card stack"><label>Mastery target (%)<input id="mastery-target" type="number" min="1" max="100" value="'+target()+'"></label>'+
       button('save-target','Save target')+'</section></div>';
     if (packs.length) {

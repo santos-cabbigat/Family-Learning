@@ -69,3 +69,13 @@ test('a verified legacy lesson backup gains its grade and subject without upload
   assert.equal(id,'existing');
   assert.deepEqual(updates,[{...prior,grade:'Grade 1',subject:'Phonics'}]);
 });
+
+test('a named personal Phonics ZIP can be found without prior app backup tags', async () => {
+  const drive = await setup(url => {
+    const parameters = new URL(url).searchParams;
+    assert.equal(parameters.get('q'), "trashed = false and name = 'Phonics-A-Lesson-Pack.zip'");
+    return Response.json({files:[{id:'accessible-private-file'}]});
+  });
+  assert.equal(await drive.findLessonZip('Phonics-A-Lesson-Pack.zip'), 'accessible-private-file');
+  await assert.rejects(drive.findLessonZip("x' or trashed = true.zip"), /Invalid/);
+});

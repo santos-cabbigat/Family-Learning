@@ -60,6 +60,14 @@ export async function syncDrive(state,progress){
 }
 
 export async function availableLessonPacks(){return listFiles(appQuery+" and appProperties has { key='type' and value='lesson-pack' }");}
+// This searches only the files the family's current Drive grant covers.
+export async function findLessonZip(filename) {
+ if (typeof filename !== 'string' || !/^[a-zA-Z0-9 ._-]{1,150}\.zip$/i.test(filename)) {
+   throw new Error('Invalid lesson ZIP name.');
+ }
+ const files = await listFiles("trashed = false and name = '" + filename + "'");
+ return files[0]?.id;
+}
 export async function downloadLessonPack(id){const file=await request(`${API}/${encodeURIComponent(id)}?fields=size`);if(Number(file.size)>100*1024*1024)throw new Error('This pack is larger than the 100 MB limit.');return request(`${API}/${encodeURIComponent(id)}?alt=media`,{responseType:'blob'});}
 export async function uploadLessonPack(manifest,blob,progress){
  if(blob.size>100*1024*1024)throw new Error('This pack is larger than the 100 MB limit.');
