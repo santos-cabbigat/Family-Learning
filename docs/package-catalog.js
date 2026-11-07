@@ -1,4 +1,4 @@
-import {importPack} from './lesson-store.js';
+import {importPack,listPacks} from './lesson-store.js';
 import {GRADES, materialGrade} from './students.js';
 import {SUBJECTS} from './learning-core.js';
 import {isConnected, availableLessonPacks, downloadLessonPack} from './drive.js';
@@ -21,7 +21,26 @@ async function publishedMaterials() {
     item.url.trim() && validPackageUrl(item.url));
 }
 
-export async function mountDownloads(panel, {grade, subject, installed, records, refresh, selectedId}) {
+export async function mountDownloads(panel, options) {
+  // Previous service workers cached lessons.js but fetched this module from the network.
+  if (typeof options === 'function') {
+    const container = panel;
+    const previousRefresh = options;
+    const host = document.createElement('section');
+    host.className = 'card stack subject-materials';
+    container.append(host);
+    async function show(selectedId) {
+      const installed = await listPacks();
+      if (!host.isConnected) return;
+      const grade = container.querySelector('#grade-filter')?.value || 'All grades';
+      await mountDownloads(host, {grade, installed, records:[], selectedId, refresh:async id => {
+        await previousRefresh();
+        if (host.isConnected) await show(id);
+      }});
+    }
+    return show();
+  }
+  const {grade, subject, installed, records, refresh, selectedId} = options;
   panel.innerHTML = `<h2>Materials</h2>
     <label>Choose a material<select class="material-select"></select></label>
     <div class="actions"><button class="btn primary material-action" type="button"></button>
