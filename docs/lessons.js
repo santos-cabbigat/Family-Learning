@@ -69,7 +69,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     loading();
     const packs = await listPacks();
     if (version !== routeVersion) return;
-    main.innerHTML = title('Downloads','Choose a subject and a material to save on this device.') +
+    main.innerHTML = title('Downloads','Choose a grade and subject, then download a lesson pack.') +
       '<div class="download-filters">' + gradeControl() +
       '<label>Subject<select id="download-subject"><option value="">All subjects</option>' +
       SUBJECTS.map(name => '<option' + (downloadSubject === name ? ' selected' : '') + '>' + escape(name) + '</option>').join('') +

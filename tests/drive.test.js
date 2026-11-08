@@ -79,3 +79,33 @@ test('a named personal Phonics ZIP can be found without prior app backup tags', 
   assert.equal(await drive.findLessonZip('Phonics-A-Lesson-Pack.zip'), 'accessible-private-file');
   await assert.rejects(drive.findLessonZip("x' or trashed = true.zip"), /Invalid/);
 });
+
+test('a private catalog download uses separate read permission without replacing the backup session', async () => {
+  const reads = [];
+  const drive = await setup((url, options) => {
+    const auth = options.headers.Authorization;
+    reads.push(auth);
+    if (new URL(url).searchParams.has('q')) {
+      return Response.json({files:auth === 'Bearer material-read' ? [{id:'private-zip'}] : []});
+    }
+    return url.includes('alt=media') ? new Response('lesson bytes') : Response.json({size:12});
+  });
+  window.google.accounts.oauth2.initTokenClient = opts => {
+    assert.equal(opts.scope,'https://www.googleapis.com/auth/drive.readonly');
+    assert.equal(opts.include_granted_scopes,false);
+    return {requestAccessToken:() => opts.callback({access_token:'material-read'})};
+  };
+  const item = {filename:'Phonics-A-Lesson-Pack.zip'};
+  assert.equal(await drive.readPrivateMaterial(item),null);
+  const blob = await drive.readPrivateMaterial(item,await drive.authorizeMaterialRead());
+  assert.equal(await blob.text(),'lesson bytes');
+  await drive.availableLessonPacks();
+  assert.deepEqual(reads,['Bearer test-only','Bearer material-read','Bearer material-read','Bearer material-read','Bearer test-only']);
+});
+
+test('declining private download permission makes no file requests and keeps backup access', async () => {
+  const drive = await setup(() => assert.fail('No Google Drive files should be requested'));
+  window.google.accounts.oauth2.initTokenClient = opts => ({requestAccessToken:() => opts.callback({error:'access_denied'})});
+  await assert.rejects(drive.authorizeMaterialRead(),/access_denied/);
+  assert.equal(drive.isConnected(),true);
+});

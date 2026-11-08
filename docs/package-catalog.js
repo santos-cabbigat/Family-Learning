@@ -63,165 +63,178 @@ export async function mountDownloads(panel, options) {
     return show();
   }
   const {grade, subject, installed, records, refresh, selectedId} = options;
-  panel.innerHTML = `<h2>Materials</h2>
-    <label>Choose a material<select class="material-select"></select></label>
-    <div class="actions"><button class="btn primary material-action" type="button"></button>
-    <button class="btn material-import" type="button">Add lesson pack ZIP</button></div>
-    <div class="material-recovery actions" hidden></div><p class="material-status muted" role="status" aria-live="polite"></p>
-    <p class="material-source muted"></p>`;
-  const selector = panel.querySelector('select');
-  const action = panel.querySelector('.material-action');
-  const add = panel.querySelector('.material-import');
-  const status = panel.querySelector('.material-status');
-  const source = panel.querySelector('.material-source');
-  const recovery = panel.querySelector('.material-recovery');
-  const materials = new Map();
+  panel.innerHTML = `<form class="stack material-search">
+      <label>Search materials<input type="search" placeholder="e.g. Phonics" autocomplete="off"></label>
+      <div><button class="btn" type="submit">Search online</button></div></form>
+    <label>Available materials<select class="material-select"></select></label>
+    <div><button class="btn primary material-action" type="button">Download</button></div>
+    <section class="material-permission stack" hidden>
+      <strong>Download from your Google account</strong>
+      <p>Google asks for permission to see and download all your Drive files. Family Learning uses this permission to find and download the selected lesson pack. Choose the account that holds it.</p>
+      <div><button class="btn primary material-allow" type="button">Allow and download</button></div>
+    </section>
+    <p class="material-status muted" role="status" aria-live="polite"></p>
+    <div class="material-source muted" role="status"></div>
+    <div><button class="btn material-connect" type="button" hidden>Show my Drive backups</button></div>
+    <details><summary>Import a file already on this device</summary>
+      <label>Lesson pack ZIP<input type="file" accept=".zip,application/zip,application/x-zip-compressed"></label></details>`;
+  const get = rule => panel.querySelector(rule);
+  const selector = get('.material-select'), action = get('.material-action');
+  const search = get('input[type=search]'), form = get('form');
+  const status = get('.material-status'), source = get('.material-source');
+  const permission = get('.material-permission'), allow = get('.material-allow');
+  const connect = get('.material-connect'), fileInput = get('input[type=file]');
   const local = new Set(installed.map(pack => pack.id));
-  const shortcuts = privateLinks();
-  let installing = false;
-  let remoteLoading = true;
+  const materials = new Map();
+  const shortcuts = privateLinks().map(item => item.id === phonicsA.id ? {...phonicsA,...item} : item);
   let chosenId = selectedId;
+  let pendingPrivate;
+  let busy = false;
+  let loading = false;
+  let revision = 0;
+
   function include(item) {
     if (!validId(item.id) || materials.has(item.id)) return;
-    const assigned = materialGrade(records, item);
-    const legacyDrive = Boolean(item.driveId || item.file || item.filename);
-    if (subject && item.subject !== subject && !(legacyDrive && !item.subject)) return;
-    if (grade !== 'All grades' && assigned !== grade && !(legacyDrive && assigned === 'Unassigned')) return;
-    materials.set(item.id, {...item, grade:assigned});
+    if (local.has(item.id) && !installed.includes(item)) return;
+    const assigned = materialGrade(records,item);
+    const privatePack = item.driveId || item.file || item.filename;
+    if (subject && item.subject !== subject && !(privatePack && !item.subject)) return;
+    if (grade !== 'All grades' && assigned !== grade && !(privatePack && assigned === 'Unassigned' && !local.has(item.id))) return;
+    materials.set(item.id,{...item,grade:assigned});
   }
   function draw() {
-    const previous = chosenId || selector.value;
+    const query = search.value.trim().toLowerCase().replace(/phonetics?/g,'phonics');
     selector.replaceChildren();
     for (const item of materials.values()) {
-      const state = local.has(item.id) ? 'Ready on this device' : (item.driveId || item.file) ? 'My Drive' : item.filename ? 'Private lesson pack' : 'Available';
-      selector.add(new Option([item.title,item.subject,item.grade === 'Unassigned' ? '' : item.grade,state].filter(Boolean).join(' · '), item.id));
+      if (![item.title,item.subject,item.grade,item.description].join(' ').toLowerCase().includes(query)) continue;
+      const label = local.has(item.id) ? 'Ready on this device' : item.driveId ? 'My Drive backup' :
+        item.file || item.filename ? 'Requires your private pack' : 'Available';
+      selector.add(new Option([item.title,item.subject,item.grade === 'Unassigned' ? '' : item.grade,label].filter(Boolean).join(' · '),item.id));
     }
-    if (materials.has(previous)) selector.value = previous;
+    if (Array.from(selector.options).some(option => option.value === chosenId)) selector.value = chosenId;
     const item = materials.get(selector.value);
-    if (!item) selector.add(new Option(remoteLoading ? 'Checking available materials…' : 'No materials for this selection', ''));
-    selector.disabled = installing || !item;
-    action.hidden = !item;
-    action.disabled = installing;
+    if (!item) selector.add(new Option(loading ? 'Searching…' : 'No matching materials',''));
+    selector.disabled = busy || !item;
+    action.hidden = !item || pendingPrivate?.id === item.id;
+    action.disabled = busy;
     action.textContent = local.has(item?.id) ? 'Open material' : 'Download';
-    add.disabled = installing;
+    permission.hidden = !pendingPrivate || pendingPrivate.id !== item?.id;
+    allow.disabled = busy;
+    connect.disabled = busy;
+    fileInput.disabled = busy;
+    search.disabled = busy;
+    for (const filter of panel.parentElement?.querySelectorAll('.download-filters select') || []) filter.disabled = busy;
+    form.querySelector('button').disabled = busy || loading;
   }
-  async function install(readFile, expected) {
-    if (installing) return;
-    installing = true;
+  function resetChoice() {
+    pendingPrivate = undefined;
+    status.textContent = '';
     draw();
-    status.textContent = 'Saving the lesson pack on this device…';
-    let receivedFile = false;
+  }
+  async function searchOnline() {
+    const current = ++revision;
+    loading = true;
+    source.textContent = 'Searching the online catalog…';
+    draw();
+    const [catalog, backups] = await Promise.allSettled([publishedMaterials(),isConnected() ? availableLessonPacks() : []]);
+    if (!panel.isConnected || current !== revision) return;
+    materials.clear();
+    installed.forEach(include);
+    if (backups.status === 'fulfilled') {
+      for (const file of backups.value) {
+        const p = file.appProperties || {};
+        include({id:p.material,title:file.name.replace(/ - Lesson Pack\.zip$/i,''),grade:p.grade,
+          subject:p.subject || (p.material === phonicsA.id ? phonicsA.subject : undefined),driveId:file.id});
+      }
+    }
+    if (catalog.status === 'fulfilled') catalog.value.forEach(include);
+    [...shortcuts,phonicsA].forEach(include);
+    source.textContent = [catalog.status === 'rejected' && 'Online catalog unavailable. Tap Search online to retry.',
+      backups.status === 'rejected' && 'Your Drive backups could not load. Reconnect and search again.'].filter(Boolean).join(' ');
+    connect.hidden = isConnected() && backups.status === 'fulfilled';
+    loading = false;
+    draw();
+  }
+  async function install(read,item = {}) {
+    if (busy) return;
+    busy = true;
+    draw();
+    status.textContent = 'Downloading '+(item.title || 'lesson pack')+'…';
     try {
-      const file = await readFile();
-      receivedFile = true;
-      const pack = await importPack(file, expected);
+      const blob = await read();
+      if (!blob) return;
+      const assigned = GRADES.includes(item.grade) ? item.grade : GRADES.includes(grade) ? grade : undefined;
+      status.textContent = 'Saving lessons on this device…';
+      const pack = await importPack(blob,{id:item.id,subject:item.subject || subject,grade:assigned});
       if (panel.isConnected) await refresh(pack.id);
     } catch (error) {
       status.textContent = error.message || 'Download failed. Try again.';
-      if (!receivedFile && (expected.file || expected.filename) && panel.isConnected) showPrivateImport(expected);
-    } finally {
-      installing = false;
-      if (panel.isConnected) draw();
-    }
+    } finally { busy = false; if (panel.isConnected) draw(); }
   }
-  function pickFile(expected) {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.zip,application/zip,application/x-zip-compressed';
-    input.hidden = true;
-    panel.append(input);
-    input.oncancel = () => input.remove();
-    input.onchange = () => {
-      const file = input.files[0];
-      input.remove();
-      if (file) install(() => file, expected);
-    };
-    input.click();
+  async function askForRead(item) {
+    status.textContent = 'Preparing Google sign-in…';
+    if (!await driveApi.prepareDrive()) throw new Error('Google Drive setup is missing in Settings.');
+    pendingPrivate = item;
+    status.textContent = '';
+    return null;
   }
-  function showPrivateImport(expected) {
-    const link = document.createElement('a');
-    link.className = 'btn primary';
-    link.href = expected.file ? 'https://drive.google.com/file/d/' + encodeURIComponent(expected.file) + '/view' :
-      'https://drive.google.com/drive/search?q=' + encodeURIComponent(expected.filename);
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    link.textContent = expected.file ? 'Get ZIP from My Drive' : 'Find ZIP in My Drive';
-    const importButton = document.createElement('button');
-    importButton.type = 'button';
-    importButton.className = 'btn';
-    importButton.textContent = 'Select lesson ZIP';
-    importButton.onclick = () => pickFile(expected);
-    recovery.replaceChildren(link,importButton);
-    recovery.hidden = false;
-    status.textContent = (expected.filename ? 'Choose '+expected.filename+' from your files or Google Drive.' :
-      'Save the ZIP from your Drive, then select it here.')+' Once saved, open Subjects → '+expected.subject+'.';
-  }
-  function optionsFor(item = {}) {
-    const assigned = GRADES.includes(item.grade) ? item.grade : GRADES.includes(grade) ? grade : undefined;
-    return {id:item.id, file:item.file, filename:item.filename, subject:item.subject || subject, grade:assigned};
-  }
-  add.onclick = () => pickFile(optionsFor());
-  selector.onchange = () => { chosenId = selector.value; recovery.hidden = true; status.textContent = ''; draw(); };
   action.onclick = () => {
     const item = materials.get(selector.value);
-    if (!item || installing) return;
-    if (local.has(item.id)) { location.hash = 'level/' + encodeURIComponent(item.id); return; }
-    if (item.file) {
-      if (!isConnected()) { showPrivateImport(optionsFor(item)); return; }
-      install(() => downloadLessonPack(item.file), optionsFor(item)); return;
-    }
-    if (item.driveId) { install(() => downloadLessonPack(item.driveId), optionsFor(item)); return; }
-    if (item.filename) {
-      const expected = optionsFor(item);
-      if (!isConnected()) { showPrivateImport(expected); return; }
+    if (!item || busy) return;
+    if (local.has(item.id)) { location.hash = 'level/'+encodeURIComponent(item.id); return; }
+    if (item.driveId) { install(() => downloadLessonPack(item.driveId),item); return; }
+    if (item.file || item.filename) {
       install(async () => {
-        const id = await driveApi.findLessonZip?.(item.filename);
-        if (!id) throw new Error('Select the ZIP from your Drive to add this pack.');
-        return downloadLessonPack(id);
-      }, expected);
-      return;
-    }
-    const url = new URL(item.url, location.href);
-    if (url.origin !== location.origin) {
-      window.open(url.href,'_blank','noopener,noreferrer');
-      status.textContent = 'Save the ZIP, then select Add lesson pack ZIP to install it here.';
+        if (isConnected()) {
+          const blob = await driveApi.readPrivateMaterial(item);
+          if (blob) return blob;
+        }
+        return askForRead(item);
+      },item);
       return;
     }
     install(async () => {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error('The file could not be downloaded. Try again.');
+      const response = await fetch(new URL(item.url,location.href),{credentials:'omit',signal:AbortSignal.timeout(120000)});
+      if (!response.ok) throw new Error('This package could not be downloaded. Try Search online again.');
+      if (Number(response.headers.get('content-length')) > 100*1024*1024) throw new Error('This package exceeds the 100 MB limit.');
       return response.blob();
-    }, optionsFor(item));
+    },item);
   };
-  function addPersonalChoices() {
-    // An installed pack is filed only under its actual grade, even when another source lacks a grade.
-    for (const item of [...shortcuts, phonicsA]) if (!local.has(item.id)) include(item);
-  }
+  allow.onclick = () => {
+    const item = pendingPrivate;
+    if (!item || busy) return;
+    install(async () => {
+      const readToken = await driveApi.authorizeMaterialRead();
+      status.textContent = 'Finding '+item.title+' in your Drive…';
+      const blob = await driveApi.readPrivateMaterial(item,readToken);
+      if (!blob) throw new Error(item.title+' was not found in that Google account. Retry with the account that holds the prepared pack.');
+      return blob;
+    },item);
+  };
+  connect.onclick = async () => {
+    if (busy) return;
+    try {
+      busy = true; draw();
+      if (!window.google?.accounts?.oauth2 || !driveApi.configuredClientId()) {
+        if (!await driveApi.prepareDrive()) throw new Error('Google Drive setup is missing in Settings.');
+        status.textContent = 'Google is ready. Tap Show my Drive backups to sign in.';
+        return;
+      }
+      await driveApi.connectDrive();
+      status.textContent = '';
+      await searchOnline();
+    } catch (error) { status.textContent = error.message; }
+    finally { busy = false; draw(); }
+  };
+  fileInput.onchange = () => {
+    const file = fileInput.files[0]; fileInput.value = '';
+    if (file) install(() => file);
+  };
+  form.onsubmit = event => { event.preventDefault(); if (!busy) { resetChoice(); searchOnline(); } };
+  selector.onchange = () => { chosenId = selector.value; resetChoice(); };
+  search.oninput = resetChoice;
   installed.forEach(include);
-  addPersonalChoices();
-  draw();
-  const connected = isConnected();
-  const [catalog, drive] = await Promise.allSettled([publishedMaterials(), connected ? availableLessonPacks() : []]);
-  if (!panel.isConnected) return;
-  // Drive files are listed newest first. Prefer the user's saved copy over a published duplicate.
-  materials.clear();
-  installed.forEach(include);
-  if (drive.status === 'fulfilled') {
-    for (const file of drive.value) {
-      const properties = file.appProperties || {};
-      if (local.has(properties.material)) continue;
-      include({id:properties.material, title:file.name.replace(/ - Lesson Pack\.zip$/i,''), grade:properties.grade,
-        subject:properties.subject || (properties.material === phonicsA.id ? phonicsA.subject : undefined), driveId:file.id});
-    }
-  }
-  addPersonalChoices();
-  if (catalog.status === 'fulfilled') catalog.value.filter(item => !local.has(item.id)).forEach(include);
-  remoteLoading = false;
-  draw();
-  const hints = [];
-  if (drive.status === 'rejected') hints.push('Your Drive list could not load. Reconnect in Google Drive settings and reopen Downloads.');
-  if (catalog.status === 'rejected') hints.push('The online catalog could not load.');
-  if (!materials.size) hints.push('No available packs for this grade and subject. Choose another filter or add your ZIP.');
-  if (materials.size && !local.size) hints.push('Downloaded lessons appear automatically in Subjects.');
-  source.textContent = hints.join(' ');
+  [...shortcuts,phonicsA].forEach(include);
+  if (selectedId && local.has(selectedId)) status.textContent = 'Ready on this device. Find this material in Subjects → '+installed.find(p => p.id === selectedId).subject+'.';
+  await searchOnline();
 }

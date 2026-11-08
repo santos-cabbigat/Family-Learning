@@ -1,4 +1,4 @@
-const CACHE='family-learning-0.4.1-mobile-navigation';
+const CACHE='family-learning-0.4.2-mobile-navigation';
 const BASE=new URL('./',self.location).pathname;
 const ASSETS=['','index.html','style.css','screens.css','screens.js','app.js','core.js','store.js','drive.js','drive-guide.js','install.js','manifest.webmanifest','icon.svg','icon-192.png','icon-512.png','config.json','release.js','students.js','lessons.js','learning-core.js','lesson-store.js','package-catalog.js','lessons.css','vendor/fflate.js'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS.map(p=>new Request(BASE+p,{cache:"reload"}))))));

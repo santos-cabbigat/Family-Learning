@@ -27,21 +27,25 @@ export async function prepareDrive(refresh=false){const cfg=await driveConfig(re
 export function connectDrive(){
  if(!config?.googleClientId||!window.google?.accounts?.oauth2)throw new Error('Complete Google Drive setup in Settings, then connect again.');
  disconnectDrive();
- return new Promise((resolve,reject)=>{const client=window.google.accounts.oauth2.initTokenClient({client_id:config.googleClientId,scope:SCOPE,callback:response=>{
+ return new Promise((resolve,reject)=>{const client=window.google.accounts.oauth2.initTokenClient({client_id:config.googleClientId,scope:SCOPE,include_granted_scopes:false,callback:response=>{
  if(response.error||!response.access_token)return reject(new Error('Google Drive permission was not granted. Nothing was uploaded.'));
  if(!window.google.accounts.oauth2.hasGrantedAllScopes(response,SCOPE))return reject(new Error('Allow access to files used by Family Learning to enable sync.'));
  token=response.access_token;expires=Date.now()+Number(response.expires_in)*1000;resolve();},error_callback:()=>reject(new Error('Google sign-in was closed or blocked. Try Connect again in Chrome or Safari.'))});client.requestAccessToken({prompt:'select_account'});});
 }
 export const isConnected=()=>Boolean(token&&Date.now()<expires-60000);
 export function disconnectDrive(){token='';expires=0;}
-async function request(url,options={}){
- if(!isConnected())throw new Error('Your Google sign-in expired. Reconnect and retry; saved work is still on this device.');
- let response;try{response=await fetch(url,{...options,signal:AbortSignal.timeout(120000),headers:{Authorization:`Bearer ${token}`,...options.headers}});}catch{throw new Error('Google Drive did not respond. Check your internet connection and retry. Nothing is marked synced.');}
- if(!response.ok){if(response.status===401)disconnectDrive();let reason='';try{reason=(await response.json()).error?.message||'';}catch{}
- throw new Error(response.status===401?'Your Google sign-in expired. Reconnect and retry.':`Google Drive could not save (${response.status}). ${reason||'Check permissions, storage space, and connection.'} Nothing is marked synced.`);}
+async function request(url,options={},readToken){
+ if(!readToken&&!isConnected())throw new Error('Your Google sign-in expired. Reconnect and retry; saved work is still on this device.');
+ let response;try{response=await fetch(url,{...options,signal:AbortSignal.timeout(120000),headers:{Authorization:`Bearer ${readToken || token}`,...options.headers}});}catch{throw new Error('Google Drive did not respond. Check your internet connection and retry. Nothing is marked synced.');}
+ if(!response.ok){if(response.status===401 && !readToken)disconnectDrive();let reason='';try{reason=(await response.json()).error?.message||'';}catch{}
+ const message = response.status===401 ? 'Your Google sign-in expired. Reconnect and retry.' :
+   'Google Drive request failed ('+response.status+'). '+(reason || 'Check your connection and account permissions.');
+ const error = new Error(message);
+ error.status = response.status;
+ throw error;}
  return response.status===204?null:options.responseType==='blob'?response.blob():response.json();
 }
-async function listFiles(q){let files=[],pageToken='';do{const params=new URLSearchParams({q,fields:'nextPageToken,files(id,name,createdTime,size,appProperties)',pageSize:'100',orderBy:'createdTime desc'});if(pageToken)params.set('pageToken',pageToken);const result=await request(`${API}?${params}`);files.push(...result.files);pageToken=result.nextPageToken||'';}while(pageToken);return files;}
+async function listFiles(q,readToken){let files=[],pageToken='';do{const params=new URLSearchParams({q,fields:'nextPageToken,files(id,name,createdTime,size,appProperties)',pageSize:'100',orderBy:'createdTime desc'});if(pageToken)params.set('pageToken',pageToken);const result=await request(`${API}?${params}`,{},readToken);files.push(...result.files);pageToken=result.nextPageToken||'';}while(pageToken);return files;}
 const appQuery="trashed = false and appProperties has { key='app' and value='family-learning' }";
 export async function availableBackups(){return listFiles(appQuery+" and mimeType = 'application/json'");}
 export async function downloadBackup(id){return validateBackup(await request(`${API}/${encodeURIComponent(id)}?alt=media`));}
@@ -61,14 +65,45 @@ export async function syncDrive(state,progress){
 
 export async function availableLessonPacks(){return listFiles(appQuery+" and appProperties has { key='type' and value='lesson-pack' }");}
 // This searches only the files the family's current Drive grant covers.
-export async function findLessonZip(filename) {
+export async function findLessonZip(filename,readToken) {
  if (typeof filename !== 'string' || !/^[a-zA-Z0-9 ._-]{1,150}\.zip$/i.test(filename)) {
    throw new Error('Invalid lesson ZIP name.');
  }
- const files = await listFiles("trashed = false and name = '" + filename + "'");
+ const files = await listFiles("trashed = false and name = '" + filename + "'",readToken);
  return files[0]?.id;
 }
-export async function downloadLessonPack(id){const file=await request(`${API}/${encodeURIComponent(id)}?fields=size`);if(Number(file.size)>100*1024*1024)throw new Error('This pack is larger than the 100 MB limit.');return request(`${API}/${encodeURIComponent(id)}?alt=media`,{responseType:'blob'});}
+export async function downloadLessonPack(id,readToken){const file=await request(`${API}/${encodeURIComponent(id)}?fields=size`,{},readToken);if(Number(file.size)>100*1024*1024)throw new Error('This pack is larger than the 100 MB limit.');return request(`${API}/${encodeURIComponent(id)}?alt=media`,{responseType:'blob'},readToken);}
+// This separate, user-initiated grant is used only for the chosen private download.
+export function authorizeMaterialRead() {
+ const oauth = window.google?.accounts?.oauth2;
+ if (!oauth || !config?.googleClientId) throw new Error('Google sign-in is unavailable. Check your connection and try again.');
+ const scope = 'https://www.googleapis.com/auth/drive.readonly';
+ return new Promise((resolve,reject) => {
+   const client = oauth.initTokenClient({
+     client_id:config.googleClientId, scope, include_granted_scopes:false,
+     callback:result => {
+       if (!result.access_token || result.error || !oauth.hasGrantedAllScopes(result,scope)) {
+         reject(new Error('Google did not grant read access. '+(result.error_description || result.error || 'You can retry with the account that owns the lesson pack.')));
+       } else resolve(result.access_token);
+     },
+     error_callback:() => reject(new Error('Google sign-in was closed or blocked. Tap Allow and download to retry.'))
+   });
+   client.requestAccessToken({prompt:'select_account'});
+ });
+}
+
+export async function readPrivateMaterial(item, readToken) {
+ if (item.file) {
+   try { return await downloadLessonPack(item.file,readToken); }
+   catch (error) { if (![403,404].includes(error.status)) throw error; }
+ }
+ if (item.filename) {
+   const id = await findLessonZip(item.filename,readToken);
+   if (id) return downloadLessonPack(id,readToken);
+ }
+ return null;
+}
+
 export async function uploadLessonPack(manifest,blob,progress){
  if(blob.size>100*1024*1024)throw new Error('This pack is larger than the 100 MB limit.');
  const checksum=[...new Uint8Array(await crypto.subtle.digest('SHA-256',await blob.arrayBuffer()))].map(b=>b.toString(16).padStart(2,'0')).join('');
