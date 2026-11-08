@@ -81,3 +81,8 @@
 .picture-caption { grid-row:2; text-align:center; color:#375241; font:500 13px/1.35 system-ui,sans-serif; }
 .picture-caption button { color:var(--green); background:transparent; border:0; cursor:pointer; padding:4px 12px; min-height:30px; text-decoration:underline; }
 .picture-caption span { padding:3px 8px; max-height:20dvh; overflow:auto; display:inline-block; vertical-align:middle; }
+
+.asset-zoom { margin:8px 0; }
+.asset-viewport { max-height:65dvh; overflow:auto; }
+.asset-viewport img { display:block; width:100%; max-width:none; height:auto; }
+.asset-viewport img.enlarged { width:200%; }

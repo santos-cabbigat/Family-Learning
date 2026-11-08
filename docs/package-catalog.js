@@ -18,7 +18,16 @@ const validId = value => typeof value === 'string' && /^[a-z0-9-]+$/.test(value)
 const privateBooks = [
   {id:'k5-phonics-a', title:'Phonics A', subject:'Phonics', filename:'Phonics-A-Lesson-Pack.zip'},
   {id:'k5-phonics-b', title:'Phonics B', subject:'Phonics', filename:'Phonics-B-Lesson-Pack.zip', grades:['Grade 1','Grade 2']},
-  {id:'k5-phonics-c', title:'Phonics C', subject:'Phonics', filename:'Phonics-C-Lesson-Pack.zip', grades:['Grade 2','Grade 3']}
+  {id:'k5-phonics-c', title:'Phonics C', subject:'Phonics', filename:'Phonics-C-Lesson-Pack.zip', grades:['Grade 2','Grade 3']},
+  {id:'k5-numbers-and-counting-to-10', title:'Numbers and Counting to 10', subject:'Math', filename:'Numbers-And-Counting-To-10-Lesson-Pack.zip', grades:['Kindergarten']},
+  {id:'k5-numbers-and-counting-to-100', title:'Numbers and Counting to 100', subject:'Math', filename:'Numbers-And-Counting-To-100-Lesson-Pack.zip', grades:['Kindergarten']},
+  {id:'k5-addition-and-subtraction', title:'Addition and Subtraction', subject:'Math', filename:'Addition-And-Subtraction-Lesson-Pack.zip', grades:['Kindergarten']},
+  {id:'k5-shapes-and-geometry', title:'Shapes and Geometry', subject:'Math', filename:'Shapes-And-Geometry-Lesson-Pack.zip', grades:['Kindergarten']},
+  {id:'k5-measurement-time-and-money', title:'Measurement, Time and Money', subject:'Math', filename:'Measurement-Time-And-Money-Lesson-Pack.zip', grades:['Kindergarten']},
+  {id:'k5-reading-comprehension-level-a', title:'Reading Comprehension Level A', subject:'Reading Comprehension', filename:'Reading-Comprehension-Level-A-Lesson-Pack.zip', grades:['Kindergarten']},
+  {id:'k5-reading-comprehension-level-b', title:'Reading Comprehension Level B', subject:'Reading Comprehension', filename:'Reading-Comprehension-Level-B-Lesson-Pack.zip', grades:['Kindergarten']},
+  {id:'k5-reading-comprehension-level-c', title:'Reading Comprehension Level C', subject:'Reading Comprehension', filename:'Reading-Comprehension-Level-C-Lesson-Pack.zip', grades:['Kindergarten']},
+  {id:'k5-phonics-flashcards', title:'Phonics Flashcards', subject:'Phonics', filename:'Phonics-Flashcards-Lesson-Pack.zip'}
 ];
 const retiredSamples = new Set(['family-making-ten','family-observing-leaves']);
 const privateKey = 'family-learning-personal-pack-links';

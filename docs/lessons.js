@@ -134,10 +134,11 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     const savedCard = savedChapter?.cards.find(c => c.id === stop?.cardId);
     const resume = savedCard ? '#lesson/' + id + '/' + savedChapter.id + '/' + savedCard.id :
       '#lesson/' + id + '/' + m.chapters[0].id;
-    main.innerHTML = title(m.title, m.level + ' · ' + materialGrade(getState().records,m)) +
+    const grade = materialGrade(getState().records,m);
+    main.innerHTML = title(m.title, m.level && m.level !== grade ? m.level+' · '+grade : grade) +
       '<div class="screen-menu">'+rowLink(resume,savedCard?'Continue lesson':'Start lesson',chapterLabel(m,savedChapter || m.chapters[0]))+'</div>'+
       '<div id="level-options"><section id="chapter-screen" class="card stack"><h2>Choose a chapter</h2>'+
-      '<label>Find a chapter or sound<input id="find-chapter" type="search"></label><label>Chapter<select id="chapter-list"></select></label>'+
+      '<label>Find a chapter<input id="find-chapter" type="search"></label><label>Chapter<select id="chapter-list"></select></label>'+
       '<a class="btn primary" id="teach-chapter">Teach chapter</a></section>'+
       '<section id="material-options" class="card stack"><h2>Material options</h2><label>Grade<select id="material-grade"><option value="">Choose grade</option>'+
       GRADES.map(g=>'<option'+(materialGrade(getState().records,m)===g?' selected':'')+'>'+g+'</option>').join('')+
@@ -203,12 +204,13 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     try { alwaysShow = localStorage.getItem('family-learning-show-picture-hints') === 'yes'; } catch {}
     function updateHint() {
       const card = chapter.cards[index];
-      const answer = card.teacherHint || oldHints[card.id];
+      const answer = card.answer || card.teacherHint || oldHints[card.id];
+      const persistent = alwaysShow && !card.answer;
       caption.hidden = !answer;
-      const shown = Boolean(answer && (alwaysShow || revealOnce));
+      const shown = Boolean(answer && (persistent || revealOnce));
       hintButton.setAttribute('aria-expanded',String(shown));
-      hintButton.hidden = alwaysShow;
-      hintButton.textContent = shown ? 'Hide hint' : 'Picture hint';
+      hintButton.hidden = persistent;
+      hintButton.textContent = card.answer ? (shown ? 'Hide answer' : 'Check answer') : (shown ? 'Hide hint' : 'Picture hint');
       hintText.hidden = !shown;
       hintText.textContent = shown ? answer : '';
     }
@@ -299,12 +301,31 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
         else toast('The lesson fills the available screen. Rotate your phone for a wider view.');
       } catch { toast('The browser could not enter full screen.'); }
     });
+    function enlargeAsset(path,title) {
+      const asset = loaded.assets[path];
+      if (!asset) return;
+      const url = URL.createObjectURL(asset);
+      dialog('<div class="guide-heading"><h2>'+escape(title)+'</h2><button class="btn" data-close>Close</button></div>' +
+        '<div class="asset-zoom"><button type="button" class="btn" aria-pressed="false">Zoom in</button></div>' +
+        '<div class="asset-viewport" tabindex="0"><img alt="'+escape(title)+'"></div>');
+      const modal = document.querySelector('#dialog');
+      const image = modal.querySelector('.asset-viewport img');
+      image.src = url;
+      const zoom = modal.querySelector('.asset-zoom button');
+      zoom.onclick = () => {
+        const enlarged = image.classList.toggle('enlarged');
+        zoom.setAttribute('aria-pressed',String(enlarged));
+        zoom.textContent = enlarged ? 'Fit to width' : 'Zoom in';
+      };
+      modal.addEventListener('close',()=>URL.revokeObjectURL(url),{once:true});
+    }
     function teacherGuide() {
       const card = chapter.cards[index];
       dialog('<div class="guide-heading"><h2>Teacher’s guide</h2><button class="btn" data-close>Close</button></div><h3>' +
         escape(chapterLabel(m,chapter)) + '</h3><p class="muted">Workbook page ' + card.page + ' · Card ' + (index + 1) +
         '</p><p>' + escape(card.guide) + '</p><div class="note green">Give each child their own turn. Record a score such as 4 out of 5 based on the work you actually checked.</div><div class="actions lesson-secondary">' +
-        button('show-workbook','Open workbook for printing') + button('chapter-score','Record chapter scores') + '</div><p class="muted lesson-secondary">Your workbook is included in this private pack. Keep materials within their permitted use.</p>');
+        (card.answerImage ? button('show-answer','Show answer key') : '') + button('show-workbook','Open workbook for printing') + button('chapter-score','Record chapter scores') + '</div><p class="muted lesson-secondary">Your workbook is included in this private pack. Keep materials within their permitted use.</p>');
+      if (card.answerImage) document.querySelector('#show-answer').onclick = () => enlargeAsset(card.answerImage,'Answer key · '+chapter.title);
       document.querySelector('#show-workbook').onclick = () => openWorkbook(card.pdfPage);
       document.querySelector('#chapter-score').onclick = () => endLesson(m,chapter,card,false,display);
     }
@@ -313,6 +334,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       dialog('<div class="guide-heading"><h2>Lesson options</h2><button class="btn" data-close>Close</button></div>' +
         '<div class="stack"><label>Jump to card<select id="card-picker"></select></label>' +
         '<label class="check-label"><input type="checkbox" id="keep-hints"> Always show picture hints on this device</label>' +
+        (chapter.cards[index].image ? button('enlarge-card','Enlarge card') : '') +
         button('teacher-guide','Teacher’s guide') + button('end-lesson','Save stopping point and results') +
         button('back-chapters','Back to chapters') +
         (saved?.cardId === chapter.cards[index].id ? '<p>Saved stopping point · '+escape(date(saved.createdAt))+'</p>' : '')+'</div>');
@@ -327,6 +349,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
         updateHint();
       };
       picker.onchange = () => { index=Number(picker.value); closeDialog(); display(); };
+      if (chapter.cards[index].image) document.querySelector('#enlarge-card').onclick = () => enlargeAsset(chapter.cards[index].image,chapter.cards[index].label);
       document.querySelector('#teacher-guide').onclick = teacherGuide;
       document.querySelector('#end-lesson').onclick = () => endLesson(m,chapter,chapter.cards[index],true,display);
       document.querySelector('#back-chapters').onclick = () => { closeDialog(); location.hash = '#level/'+materialId; };

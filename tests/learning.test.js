@@ -45,6 +45,10 @@ test('packs reject missing image content and unsafe image paths', () => {
     chapters:[{id:'chapter1',title:'m',cards:[{id:'card1',page:6,guide:'Say m.',label:'Sound',image:'cards/m.webp'}]}]};
   assert.throws(()=>validatePack(m,{'workbook.pdf':new Uint8Array()}));
   assert.equal(validatePack(m,{'workbook.pdf':new Uint8Array(),'cards/m.webp':new Uint8Array()}),m);
+  m.chapters[0].cards[0].answerImage='cards/key.webp';
+  assert.throws(()=>validatePack(m,{'workbook.pdf':new Uint8Array(),'cards/m.webp':new Uint8Array()}),/answer image/);
+  assert.equal(validatePack(m,{'workbook.pdf':new Uint8Array(),'cards/m.webp':new Uint8Array(),'cards/key.webp':new Uint8Array()}),m);
+  delete m.chapters[0].cards[0].answerImage;
   m.chapters[0].cards[0].image='../unsafe.webp';
   assert.throws(()=>validatePack(m,{'workbook.pdf':new Uint8Array(),'../unsafe.webp':new Uint8Array()}));
 });

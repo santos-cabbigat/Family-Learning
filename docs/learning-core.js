@@ -57,6 +57,10 @@ export function validatePack(manifest, files) {
       if (typeof card.id !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(card.id) || ids.has(card.id) || !Number.isInteger(card.page) || card.page < 1 ||
           typeof card.guide !== 'string' || typeof card.label !== 'string') throw new Error('A lesson card is invalid.');
       ids.add(card.id);
+      if (card.answerImage !== undefined && (typeof card.answerImage !== 'string' ||
+          !/^cards\/[a-zA-Z0-9_-]+\.(webp|png|jpg)$/.test(card.answerImage) || !files[card.answerImage])) {
+        throw new Error('A teacher answer image is missing or invalid.');
+      }
       if (card.image) {
         if (!/^cards\/[a-zA-Z0-9_-]+\.(webp|png|jpg)$/.test(card.image) || !files[card.image]) {
           throw new Error('An illustration is missing from this lesson pack.');
