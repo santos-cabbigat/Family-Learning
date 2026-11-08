@@ -17,7 +17,8 @@ const validId = value => typeof value === 'string' && /^[a-z0-9-]+$/.test(value)
 // Only descriptive metadata is public. Each licensed workbook stays in its owner's Drive.
 const privateBooks = [
   {id:'k5-phonics-a', title:'Phonics A', subject:'Phonics', filename:'Phonics-A-Lesson-Pack.zip'},
-  {id:'k5-phonics-b', title:'Phonics B', subject:'Phonics', filename:'Phonics-B-Lesson-Pack.zip', grades:['Grade 1','Grade 2']}
+  {id:'k5-phonics-b', title:'Phonics B', subject:'Phonics', filename:'Phonics-B-Lesson-Pack.zip', grades:['Grade 1','Grade 2']},
+  {id:'k5-phonics-c', title:'Phonics C', subject:'Phonics', filename:'Phonics-C-Lesson-Pack.zip', grades:['Grade 2','Grade 3']}
 ];
 const retiredSamples = new Set(['family-making-ten','family-observing-leaves']);
 const privateKey = 'family-learning-personal-pack-links';

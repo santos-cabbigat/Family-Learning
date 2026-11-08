@@ -1,3 +1,4 @@
+import {legacyPictureHints} from './picture-hints.js';
 import {rowLink,screenMenu} from './screens.js';
 import {GRADES,activeStudents,materialGrade} from './students.js';
 import { record, latestProfiles } from './core.js';
@@ -184,6 +185,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     document.body.classList.add('lesson-presentation');
     main.innerHTML = `<section class="presentation" aria-label="Lesson presentation">
       <div class="teaching-card" id="teaching-card" tabindex="0" aria-label="Teaching card"></div>
+      <div class="picture-caption" hidden><button type="button" id="picture-hint" aria-expanded="false" aria-controls="picture-answer">Picture hint</button><span id="picture-answer" hidden></span></div>
       <div class="presentation-controls">
         <button type="button" class="player-icon" id="previous-card" aria-label="Previous card">←</button>
         <div class="presentation-title" role="status" aria-live="polite" aria-atomic="true">
@@ -194,6 +196,28 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
         <button type="button" class="player-icon" id="lesson-tools" aria-label="Lesson options" title="Lesson options">⋮</button>
       </div></section>`;
     const stage = query('#teaching-card');
+    const caption = query('.picture-caption');
+    const hintButton = query('#picture-hint');
+    const hintText = query('#picture-answer');
+    let oldHints = {}, revealOnce = false, alwaysShow = false;
+    try { alwaysShow = localStorage.getItem('family-learning-show-picture-hints') === 'yes'; } catch {}
+    function updateHint() {
+      const card = chapter.cards[index];
+      const answer = card.teacherHint || oldHints[card.id];
+      caption.hidden = !answer;
+      const shown = Boolean(answer && (alwaysShow || revealOnce));
+      hintButton.setAttribute('aria-expanded',String(shown));
+      hintButton.hidden = alwaysShow;
+      hintButton.textContent = shown ? 'Hide hint' : 'Picture hint';
+      hintText.hidden = !shown;
+      hintText.textContent = shown ? answer : '';
+    }
+    listen(hintButton,'click',() => { revealOnce=!revealOnce; updateHint(); });
+    legacyPictureHints(loaded).then(hints => {
+      if (version !== routeVersion) return;
+      oldHints = hints;
+      updateHint();
+    });
     function fitText() {
       const word = stage.querySelector('.word-card');
       if (!word || !stage.clientWidth || !stage.clientHeight) return;
@@ -213,6 +237,8 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       const card = chapter.cards[index];
       if (pictureUrl) URL.revokeObjectURL(pictureUrl);
       pictureUrl = card.image ? URL.createObjectURL(activePack.assets[card.image]) : null;
+      revealOnce = false;
+      updateHint();
       stage.innerHTML = pictureUrl ? '<img src="' + pictureUrl + '" alt="' + escape(card.label) + '" draggable="false">' :
         '<div class="word-card"><span>' + escape(card.text) + '</span></div>';
       fitText();
@@ -286,12 +312,20 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       const saved = latestStop(getState().records,materialId);
       dialog('<div class="guide-heading"><h2>Lesson options</h2><button class="btn" data-close>Close</button></div>' +
         '<div class="stack"><label>Jump to card<select id="card-picker"></select></label>' +
+        '<label class="check-label"><input type="checkbox" id="keep-hints"> Always show picture hints on this device</label>' +
         button('teacher-guide','Teacher’s guide') + button('end-lesson','Save stopping point and results') +
         button('back-chapters','Back to chapters') +
         (saved?.cardId === chapter.cards[index].id ? '<p>Saved stopping point · '+escape(date(saved.createdAt))+'</p>' : '')+'</div>');
       const picker = document.querySelector('#card-picker');
       picker.replaceChildren(...chapter.cards.map((c,i)=>new Option((i+1)+' · '+c.label,i)));
       picker.value = index;
+      const keepHints = document.querySelector('#keep-hints');
+      keepHints.checked = alwaysShow;
+      keepHints.onchange = () => {
+        alwaysShow = keepHints.checked; revealOnce = false;
+        try { localStorage.setItem('family-learning-show-picture-hints',alwaysShow ? 'yes' : 'no'); } catch {}
+        updateHint();
+      };
       picker.onchange = () => { index=Number(picker.value); closeDialog(); display(); };
       document.querySelector('#teacher-guide').onclick = teacherGuide;
       document.querySelector('#end-lesson').onclick = () => endLesson(m,chapter,chapter.cards[index],true,display);
