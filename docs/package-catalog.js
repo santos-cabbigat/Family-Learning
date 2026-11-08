@@ -14,8 +14,12 @@ function validPackageUrl(value) {
 
 const validId = value => typeof value === 'string' && /^[a-z0-9-]+$/.test(value);
 // Personal shortcuts stay in this browser. ZIP data is requested only after a Download tap.
-// Describe the compatible private workbook without publishing a family's Drive file ID.
-const phonicsA = {id:'k5-phonics-a', title:'Phonics A', subject:'Phonics', filename:'Phonics-A-Lesson-Pack.zip'};
+// Only descriptive metadata is public. Each licensed workbook stays in its owner's Drive.
+const privateBooks = [
+  {id:'k5-phonics-a', title:'Phonics A', subject:'Phonics', filename:'Phonics-A-Lesson-Pack.zip'},
+  {id:'k5-phonics-b', title:'Phonics B', subject:'Phonics', filename:'Phonics-B-Lesson-Pack.zip', grades:['Grade 1','Grade 2']}
+];
+const retiredSamples = new Set(['family-making-ten','family-observing-leaves']);
 const privateKey = 'family-learning-personal-pack-links';
 function privateLinks() {
   try { return JSON.parse(localStorage.getItem(privateKey) || '[]').filter(validPrivate); }
@@ -100,7 +104,7 @@ export async function mountDownloads(panel, options) {
   }
   const local = new Set(installed.map(pack => pack.id));
   const materials = new Map();
-  const shortcuts = privateLinks().map(item => item.id === phonicsA.id ? {...phonicsA,...item} : item);
+  const shortcuts = privateLinks().map(item => ({...privateBooks.find(book=>book.id===item.id),...item}));
   let chosenId = selectedId;
   let pendingPrivate;
   let busy = false;
@@ -108,11 +112,12 @@ export async function mountDownloads(panel, options) {
   let revision = 0;
 
   function include(item) {
-    if (!validId(item.id) || materials.has(item.id)) return;
+    if (!validId(item.id) || retiredSamples.has(item.id) || materials.has(item.id)) return;
     if (local.has(item.id) && !installed.includes(item)) return;
     const assigned = materialGrade(records,item);
     const privatePack = item.driveId || item.file || item.filename;
     if (subject && item.subject !== subject && !(privatePack && !item.subject)) return;
+    if (assigned === 'Unassigned' && GRADES.includes(grade) && item.grades && !item.grades.includes(grade)) return;
     if (grade !== 'All grades' && assigned !== grade && !(privatePack && assigned === 'Unassigned' && !local.has(item.id))) return;
     materials.set(item.id,{...item,grade:assigned});
   }
@@ -123,7 +128,7 @@ export async function mountDownloads(panel, options) {
       if (![item.title,item.subject,item.grade,item.description].join(' ').toLowerCase().includes(query)) continue;
       const label = local.has(item.id) ? 'Ready on this device' : item.driveId ? 'My Drive backup' :
         item.file || item.filename ? 'Requires your private pack' : 'Available';
-      selector.add(new Option([item.title,item.subject,item.grade === 'Unassigned' ? '' : item.grade,label].filter(Boolean).join(' · '),item.id));
+      selector.add(new Option([item.title,item.subject,item.grade === 'Unassigned' ? item.grades?.join(' / ') : item.grade,label].filter(Boolean).join(' · '),item.id));
     }
     if (Array.from(selector.options).some(option => option.value === chosenId)) selector.value = chosenId;
     const item = materials.get(selector.value);
@@ -157,12 +162,13 @@ export async function mountDownloads(panel, options) {
     if (backups.status === 'fulfilled') {
       for (const file of backups.value) {
         const p = file.appProperties || {};
-        include({id:p.material,title:file.name.replace(/ - Lesson Pack\.zip$/i,''),grade:p.grade,
-          subject:p.subject || (p.material === phonicsA.id ? phonicsA.subject : undefined),driveId:file.id});
+        const book=privateBooks.find(item=>item.id===p.material);
+        include({...book,id:p.material,title:file.name.replace(/ - Lesson Pack\.zip$/i,''),grade:p.grade,
+          subject:p.subject || book?.subject,driveId:file.id});
       }
     }
     if (catalog.status === 'fulfilled') catalog.value.forEach(include);
-    [...shortcuts,phonicsA].forEach(include);
+    [...shortcuts,...privateBooks].forEach(include);
     source.textContent = [catalog.status === 'rejected' && 'Online catalog unavailable. Tap Search online to retry.',
       backups.status === 'rejected' && 'Your Drive backups could not load. Reconnect and search again.'].filter(Boolean).join(' ');
     connect.hidden = isConnected() && backups.status === 'fulfilled';
@@ -179,7 +185,7 @@ export async function mountDownloads(panel, options) {
     try {
       const blob = await read();
       if (!blob) return;
-      const assigned = GRADES.includes(item.grade) ? item.grade : GRADES.includes(grade) ? grade : undefined;
+      const assigned = GRADES.includes(item.grade) ? item.grade : GRADES.includes(grade) ? grade : item.grades?.[0];
       progress.removeAttribute('value');
       status.textContent = 'Saving lessons on this device…';
       const pack = await importPack(blob,{id:item.id,subject:item.subject || subject,grade:assigned});
@@ -250,7 +256,7 @@ export async function mountDownloads(panel, options) {
   selector.onchange = () => { chosenId = selector.value; resetChoice(); };
   search.oninput = resetChoice;
   installed.forEach(include);
-  [...shortcuts,phonicsA].forEach(include);
+  [...shortcuts,...privateBooks].forEach(include);
   if (selectedId && local.has(selectedId)) status.textContent = 'Ready on this device. Find this material in Subjects → '+installed.find(p => p.id === selectedId).subject+'.';
   await searchOnline();
 }

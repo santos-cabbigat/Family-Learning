@@ -1,21 +1,4 @@
 {
   "version": 1,
-  "packages": [
-    {
-      "id": "family-making-ten",
-      "subject": "Math",
-      "grade": "Kindergarten",
-      "title": "Numbers around us",
-      "description": "Family Learning starter lesson",
-      "url": "./materials/family-making-ten.zip"
-    },
-    {
-      "id": "family-observing-leaves",
-      "subject": "Science",
-      "grade": "Grade 1",
-      "title": "A closer look at leaves",
-      "description": "Family Learning starter lesson",
-      "url": "./materials/family-observing-leaves.zip"
-    }
-  ]
+  "packages": []
 }

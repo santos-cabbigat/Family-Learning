@@ -1,7 +1,7 @@
 import {GRADES} from './students.js';
 import {validateLearningRecord} from './learning-core.js';
 export const SCHEMA=1;
-export const VERSION='0.4.3';
+export const VERSION='0.4.4';
 export const uid=()=>{if(crypto.randomUUID)return crypto.randomUUID();const b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;const h=[...b].map(v=>v.toString(16).padStart(2,'0')).join('');return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;};
 let lastRecordTime=0;
 export function record(kind,data){lastRecordTime=Math.max(Date.now(),lastRecordTime+1);return {id:uid(),kind,createdAt:new Date(lastRecordTime).toISOString(),...data};}
