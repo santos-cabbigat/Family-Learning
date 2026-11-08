@@ -1,3 +1,4 @@
+import {readPackResponse} from './pack-transfer.js';
 import {importPack,listPacks} from './lesson-store.js';
 import {GRADES, materialGrade} from './students.js';
 import {SUBJECTS} from './learning-core.js';
@@ -68,6 +69,7 @@ export async function mountDownloads(panel, options) {
       <div><button class="btn" type="submit">Search online</button></div></form>
     <label>Available materials<select class="material-select"></select></label>
     <div><button class="btn primary material-action" type="button">Download</button></div>
+    <progress class="download-progress" aria-label="Lesson pack download progress" max="100" hidden></progress>
     <section class="material-permission stack" hidden>
       <strong>Download from your Google account</strong>
       <p>Google asks for permission to see and download all your Drive files. Family Learning uses this permission to find and download the selected lesson pack. Choose the account that holds it.</p>
@@ -84,6 +86,18 @@ export async function mountDownloads(panel, options) {
   const status = get('.material-status'), source = get('.material-source');
   const permission = get('.material-permission'), allow = get('.material-allow');
   const connect = get('.material-connect'), fileInput = get('input[type=file]');
+  const progress = get('.download-progress');
+  function reportBytes(received,total) {
+    const mb = (received / 1048576).toFixed(1);
+    if (total && received <= total) {
+      const percent = Math.floor(received * 100 / total);
+      progress.value = percent;
+      status.textContent = 'Downloading · '+percent+'% ('+mb+' MB)';
+    } else {
+      progress.removeAttribute('value');
+      status.textContent = 'Downloading · '+mb+' MB received';
+    }
+  }
   const local = new Set(installed.map(pack => pack.id));
   const materials = new Map();
   const shortcuts = privateLinks().map(item => item.id === phonicsA.id ? {...phonicsA,...item} : item);
@@ -159,17 +173,20 @@ export async function mountDownloads(panel, options) {
     if (busy) return;
     busy = true;
     draw();
+    progress.removeAttribute('value');
+    progress.hidden = false;
     status.textContent = 'Downloading '+(item.title || 'lesson pack')+'…';
     try {
       const blob = await read();
       if (!blob) return;
       const assigned = GRADES.includes(item.grade) ? item.grade : GRADES.includes(grade) ? grade : undefined;
+      progress.removeAttribute('value');
       status.textContent = 'Saving lessons on this device…';
       const pack = await importPack(blob,{id:item.id,subject:item.subject || subject,grade:assigned});
       if (panel.isConnected) await refresh(pack.id);
     } catch (error) {
       status.textContent = error.message || 'Download failed. Try again.';
-    } finally { busy = false; if (panel.isConnected) draw(); }
+    } finally { progress.hidden = true; busy = false; if (panel.isConnected) draw(); }
   }
   async function askForRead(item) {
     status.textContent = 'Preparing Google sign-in…';
@@ -182,11 +199,11 @@ export async function mountDownloads(panel, options) {
     const item = materials.get(selector.value);
     if (!item || busy) return;
     if (local.has(item.id)) { location.hash = 'level/'+encodeURIComponent(item.id); return; }
-    if (item.driveId) { install(() => downloadLessonPack(item.driveId),item); return; }
+    if (item.driveId) { install(() => downloadLessonPack(item.driveId,undefined,reportBytes),item); return; }
     if (item.file || item.filename) {
       install(async () => {
         if (isConnected()) {
-          const blob = await driveApi.readPrivateMaterial(item);
+          const blob = await driveApi.readPrivateMaterial(item,undefined,reportBytes);
           if (blob) return blob;
         }
         return askForRead(item);
@@ -196,8 +213,7 @@ export async function mountDownloads(panel, options) {
     install(async () => {
       const response = await fetch(new URL(item.url,location.href),{credentials:'omit',signal:AbortSignal.timeout(120000)});
       if (!response.ok) throw new Error('This package could not be downloaded. Try Search online again.');
-      if (Number(response.headers.get('content-length')) > 100*1024*1024) throw new Error('This package exceeds the 100 MB limit.');
-      return response.blob();
+      return readPackResponse(response,reportBytes);
     },item);
   };
   allow.onclick = () => {
@@ -206,7 +222,7 @@ export async function mountDownloads(panel, options) {
     install(async () => {
       const readToken = await driveApi.authorizeMaterialRead();
       status.textContent = 'Finding '+item.title+' in your Drive…';
-      const blob = await driveApi.readPrivateMaterial(item,readToken);
+      const blob = await driveApi.readPrivateMaterial(item,readToken,reportBytes);
       if (!blob) throw new Error(item.title+' was not found in that Google account. Retry with the account that holds the prepared pack.');
       return blob;
     },item);

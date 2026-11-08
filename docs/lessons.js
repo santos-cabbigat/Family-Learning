@@ -10,6 +10,16 @@ const escape = value => String(value ?? '').replace(/[&<>"']/g, c =>
 const button = (id, label, primary = false) => '<button class="btn' + (primary ? ' primary' : '') + '" id="' + id + '">' + label + '</button>';
 const date = value => new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
+function chapterLabel(material,chapter) {
+  const number = material.chapters.indexOf(chapter)+1;
+  let title = chapter.title.trim();
+  if (material.id === 'k5-phonics-a') {
+    title = title.replace(/^The /i,'');
+    title = title.charAt(0).toUpperCase()+title.slice(1);
+  }
+  return /^chapter\s+\d+\b/i.test(title) ? title : 'Chapter '+number+(title ? ' · '+title : '');
+}
+
 export function createLessons({ main, getState, mutate, toast, dialog, closeDialog, onError }) {
   let controller;
   let activePack;
@@ -124,9 +134,9 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     const resume = savedCard ? '#lesson/' + id + '/' + savedChapter.id + '/' + savedCard.id :
       '#lesson/' + id + '/' + m.chapters[0].id;
     main.innerHTML = title(m.title, m.level + ' · ' + materialGrade(getState().records,m)) +
-      '<div class="screen-menu">'+rowLink(resume,savedCard?'Continue lesson':'Start lesson',savedChapter?.title || m.chapters[0].title)+'</div>'+
+      '<div class="screen-menu">'+rowLink(resume,savedCard?'Continue lesson':'Start lesson',chapterLabel(m,savedChapter || m.chapters[0]))+'</div>'+
       '<div id="level-options"><section id="chapter-screen" class="card stack"><h2>Choose a chapter</h2>'+
-      '<label>Find a sound or page<input id="find-chapter" type="search"></label><label>Chapter<select id="chapter-list"></select></label>'+
+      '<label>Find a chapter or sound<input id="find-chapter" type="search"></label><label>Chapter<select id="chapter-list"></select></label>'+
       '<a class="btn primary" id="teach-chapter">Teach chapter</a></section>'+
       '<section id="material-options" class="card stack"><h2>Material options</h2><label>Grade<select id="material-grade"><option value="">Choose grade</option>'+
       GRADES.map(g=>'<option'+(materialGrade(getState().records,m)===g?' selected':'')+'>'+g+'</option>').join('')+
@@ -134,9 +144,9 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     const chapterSelect=query('#chapter-list'), teach=query('#teach-chapter');
     const selectChapter=()=>{teach.hidden=!chapterSelect.value;teach.href='#lesson/'+m.id+'/'+chapterSelect.value;};
     function filterChapters(term) {
-      const page=Number(term);
-      const matches=m.chapters.filter(ch=>!term || ch.title.toLowerCase().includes(term) || (page>=ch.startPage && page<=ch.endPage));
-      chapterSelect.replaceChildren(...matches.map(ch=>new Option(ch.title+' · pp. '+ch.startPage+'–'+ch.endPage,ch.id)));
+      const matches=m.chapters.map(ch=>new Option(chapterLabel(m,ch),ch.id))
+        .filter(option=>option.text.toLowerCase().includes(term));
+      chapterSelect.replaceChildren(...matches);
       if(!matches.length) chapterSelect.add(new Option('No matching chapters',''));
       selectChapter();
     }
@@ -167,84 +177,131 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     activePack = loaded;
     if (!activePack) { await level(materialId); return; }
     const m = activePack.manifest;
-    const chapter = m.chapters.find(c => c.id === chapterId);
-    if (!chapter) { location.hash = '#level/' + materialId; return; }
+    let chapterIndex = m.chapters.findIndex(c => c.id === chapterId);
+    if (chapterIndex < 0) { location.hash = '#level/' + materialId; return; }
+    let chapter = m.chapters[chapterIndex];
     let index = Math.max(0, chapter.cards.findIndex(c => c.id === cardId));
     document.body.classList.add('lesson-presentation');
-    main.innerHTML = '<section class="presentation" aria-label="Lesson presentation"><div class="presentation-toolbar">' +
-      '<a class="btn" href="#level/' + materialId + '">← Chapters</a><div class="presentation-title"><strong>' +
-      escape(chapter.title) + '</strong><small>'+escape(m.title)+'</small></div>' + button('teacher-guide', 'Teacher’s guide') +
-      '</div><div class="card-reference"><span id="page-ref"></span><label>Card <select id="card-picker" aria-label="Choose lesson card">' +
-      chapter.cards.map((c, i) => '<option value="' + i + '">' + (i + 1) + ' · p. ' + c.page + ' · ' + escape(c.label) + '</option>').join('') +
-      '</select></label></div><div class="teaching-card" id="teaching-card" tabindex="0" aria-label="Teaching card"></div>' +
-      '<div class="presentation-controls">' + button('previous-card', '← Previous') + '<span id="card-count" role="status" aria-live="polite"></span>' +
-      button('next-card', 'Next →') + '</div><div class="presentation-save"><span id="saved-stop" class="muted"></span>' +
-      '<div class="actions">' + button('present-fullscreen', 'Full screen') + button('end-lesson', 'End lesson here', true) +
-      '</div></div></section>';
+    main.innerHTML = `<section class="presentation" aria-label="Lesson presentation">
+      <div class="teaching-card" id="teaching-card" tabindex="0" aria-label="Teaching card"></div>
+      <div class="presentation-controls">
+        <button type="button" class="player-icon" id="previous-card" aria-label="Previous card">←</button>
+        <div class="presentation-title" role="status" aria-live="polite" aria-atomic="true">
+          <strong id="current-chapter"></strong><small id="card-count"></small>
+        </div>
+        <button type="button" class="player-icon" id="next-card" aria-label="Next card">→</button>
+        <button type="button" class="player-icon" id="present-fullscreen" aria-label="Full screen" title="Full screen">⛶</button>
+        <button type="button" class="player-icon" id="lesson-tools" aria-label="Lesson options" title="Lesson options">⋮</button>
+      </div></section>`;
+    const stage = query('#teaching-card');
+    function fitText() {
+      const word = stage.querySelector('.word-card');
+      if (!word || !stage.clientWidth || !stage.clientHeight) return;
+      let low = 14, high = Math.min(stage.clientHeight,stage.clientWidth,250);
+      while (high-low > 1) {
+        const size = Math.floor((high+low)/2);
+        word.style.fontSize = size+'px';
+        if (word.scrollWidth <= word.clientWidth && word.scrollHeight <= word.clientHeight) low=size;
+        else high=size;
+      }
+      word.style.fontSize=low+'px';
+    }
+    const resize = new ResizeObserver(fitText);
+    resize.observe(stage);
+    controller.signal.addEventListener('abort',()=>resize.disconnect(),{once:true});
     function display() {
       const card = chapter.cards[index];
       if (pictureUrl) URL.revokeObjectURL(pictureUrl);
       pictureUrl = card.image ? URL.createObjectURL(activePack.assets[card.image]) : null;
-      query('#teaching-card').innerHTML = pictureUrl ? '<img src="' + pictureUrl + '" alt="' +
-        escape(card.label + ' from '+m.title+', workbook page ' + card.page) + '" draggable="false">' :
-        '<div class="word-card">' + escape(card.text) + '</div>';
-      query('#page-ref').textContent = 'Workbook page ' + card.page + ' · ' + card.label;
-      query('#card-count').textContent = (index + 1) + ' of ' + chapter.cards.length;
-      query('#card-picker').value = index;
-      query('#previous-card').disabled = index === 0;
-      query('#next-card').disabled = index === chapter.cards.length - 1;
-      const saved = latestStop(getState().records, materialId);
-      query('#saved-stop').textContent = saved?.cardId === card.id ? 'Saved stopping point · ' + date(saved.createdAt) : '';
-      // This URL supports browsing back to a card. Only End lesson here writes a learning record.
-      history.replaceState(history.state, '', '#lesson/' + materialId + '/' + chapter.id + '/' + card.id);
+      stage.innerHTML = pictureUrl ? '<img src="' + pictureUrl + '" alt="' + escape(card.label) + '" draggable="false">' :
+        '<div class="word-card"><span>' + escape(card.text) + '</span></div>';
+      fitText();
+      query('#current-chapter').textContent = chapterLabel(m,chapter);
+      query('#card-count').textContent = 'Card '+(index+1)+' of '+chapter.cards.length;
+      const previous = query('#previous-card'), next = query('#next-card');
+      const last = index === chapter.cards.length-1;
+      const finalCard = last && chapterIndex === m.chapters.length-1;
+      previous.disabled = index === 0 && chapterIndex === 0;
+      previous.ariaLabel = previous.title = index === 0 && chapterIndex > 0 ? 'Previous chapter' : 'Previous card';
+      next.ariaLabel = next.title = finalCard ? 'Finish lesson' : last ? 'Next chapter' : 'Next card';
+      next.textContent = finalCard ? '✓' : '→';
+      history.replaceState(history.state, '', '#lesson/'+materialId+'/'+chapter.id+'/'+card.id);
     }
-    function step(amount) {
-      index = Math.max(0, Math.min(chapter.cards.length - 1, index + amount));
+    function step(direction) {
+      const nextIndex = index+direction;
+      if (nextIndex >= 0 && nextIndex < chapter.cards.length) index = nextIndex;
+      else {
+        const nextChapter = m.chapters[chapterIndex+direction];
+        if (!nextChapter) {
+          if (direction > 0) endLesson(m,chapter,chapter.cards[index],true,display);
+          return;
+        }
+        chapterIndex += direction;
+        chapter = nextChapter;
+        index = direction > 0 ? 0 : chapter.cards.length-1;
+      }
       display();
     }
     display();
     listen(query('#previous-card'), 'click', () => step(-1));
     listen(query('#next-card'), 'click', () => step(1));
-    listen(query('#card-picker'), 'change', e => { index = Number(e.target.value); display(); });
     listen(document, 'keydown', e => {
       if (document.querySelector('dialog[open]') || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
       if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
       if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
     });
     let touch;
-    listen(query('#teaching-card'), 'touchstart', e => {
-      touch = e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+    listen(stage, 'touchstart', e => {
+      touch = e.touches.length === 1 ? { x:e.touches[0].clientX, y:e.touches[0].clientY } : null;
     });
-    listen(query('#teaching-card'), 'touchend', e => {
+    listen(stage, 'touchend', e => {
       if (!touch || !e.changedTouches[0]) return;
-      const dx = e.changedTouches[0].clientX - touch.x, dy = e.changedTouches[0].clientY - touch.y;
-      if (Math.abs(dx) > 65 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
+      const dx = e.changedTouches[0].clientX-touch.x, dy = e.changedTouches[0].clientY-touch.y;
+      if (Math.abs(dx)>65 && Math.abs(dx)>Math.abs(dy)*1.5) step(dx<0 ? 1 : -1);
       touch = null;
     });
-    listen(query('#present-fullscreen'), 'click', async () => {
+    const fullscreen = query('#present-fullscreen');
+    function fullscreenLabel() {
+      fullscreen.ariaLabel = fullscreen.title = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
+    }
+    fullscreenLabel();
+    listen(document,'fullscreenchange',fullscreenLabel);
+    listen(fullscreen,'click',async () => {
       try {
         if (document.fullscreenElement) await document.exitFullscreen();
         else if (document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
-        else toast('The teaching view already fills the available screen. Rotate your iPad for a wider view.');
-      } catch { toast('Full screen is unavailable in this browser.'); }
+        else toast('The lesson fills the available screen. Rotate your phone for a wider view.');
+      } catch { toast('The browser could not enter full screen.'); }
     });
-    listen(query('#teacher-guide'), 'click', () => {
+    function teacherGuide() {
       const card = chapter.cards[index];
       dialog('<div class="guide-heading"><h2>Teacher’s guide</h2><button class="btn" data-close>Close</button></div><h3>' +
-        escape(chapter.title) + '</h3><p class="muted">Workbook page ' + card.page + ' · Card ' + (index + 1) +
-        '</p><p>' + escape(card.guide) + '</p><div class="note green">Give each child their own turn. Record a score such as 4 out of 5 based on the work you actually checked.</div>' +
-        '<div class="actions lesson-secondary">' + button('show-workbook', 'Open workbook for printing') +
-        button('chapter-score', 'Record chapter scores') + '</div><p class="muted lesson-secondary">Your workbook is included in this private pack. Keep materials within their permitted use.</p>');
+        escape(chapterLabel(m,chapter)) + '</h3><p class="muted">Workbook page ' + card.page + ' · Card ' + (index + 1) +
+        '</p><p>' + escape(card.guide) + '</p><div class="note green">Give each child their own turn. Record a score such as 4 out of 5 based on the work you actually checked.</div><div class="actions lesson-secondary">' +
+        button('show-workbook','Open workbook for printing') + button('chapter-score','Record chapter scores') + '</div><p class="muted lesson-secondary">Your workbook is included in this private pack. Keep materials within their permitted use.</p>');
       document.querySelector('#show-workbook').onclick = () => openWorkbook(card.pdfPage);
-      document.querySelector('#chapter-score').onclick = () => endLesson(m, chapter, card, false, display);
+      document.querySelector('#chapter-score').onclick = () => endLesson(m,chapter,card,false,display);
+    }
+    listen(query('#lesson-tools'),'click',() => {
+      const saved = latestStop(getState().records,materialId);
+      dialog('<div class="guide-heading"><h2>Lesson options</h2><button class="btn" data-close>Close</button></div>' +
+        '<div class="stack"><label>Jump to card<select id="card-picker"></select></label>' +
+        button('teacher-guide','Teacher’s guide') + button('end-lesson','Save stopping point and results') +
+        button('back-chapters','Back to chapters') +
+        (saved?.cardId === chapter.cards[index].id ? '<p>Saved stopping point · '+escape(date(saved.createdAt))+'</p>' : '')+'</div>');
+      const picker = document.querySelector('#card-picker');
+      picker.replaceChildren(...chapter.cards.map((c,i)=>new Option((i+1)+' · '+c.label,i)));
+      picker.value = index;
+      picker.onchange = () => { index=Number(picker.value); closeDialog(); display(); };
+      document.querySelector('#teacher-guide').onclick = teacherGuide;
+      document.querySelector('#end-lesson').onclick = () => endLesson(m,chapter,chapter.cards[index],true,display);
+      document.querySelector('#back-chapters').onclick = () => { closeDialog(); location.hash = '#level/'+materialId; };
     });
-    listen(query('#end-lesson'), 'click', () => endLesson(m, chapter, chapter.cards[index], true, display));
   }
   function endLesson(material, chapter, card, saveStop, afterSave) {
     const last = chapter.cards.at(-1).id === card.id;
     dialog('<div class="guide-heading"><h2>' + (saveStop ? 'End lesson here' : 'Chapter scores') +
-      '</h2><button class="btn" data-close>Cancel</button></div><p>' + escape(chapter.title) + ' · Workbook page ' +
-      card.page + '</p><form id="lesson-results" class="stack">' + people().map((p, i) => {
+      '</h2><button class="btn" data-close>Cancel</button></div><p>' + escape(chapterLabel(material,chapter)) + '</p><form id="lesson-results" class="stack">' + people().map((p, i) => {
         const previous = result(p.childId, material.id, chapter.id);
         return '<fieldset class="child-result"><legend>' + escape(p.name) + '</legend>' +
           '<label class="check-label"><input type="checkbox" name="attended-' + i + '" checked> Took part in this lesson</label>' +
@@ -343,7 +400,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       materials.replaceChildren(...packs.map(m=>new Option(m.title,m.id)));
       function draw(changed) {
         const m=packs.find(p=>p.id===materials.value);
-        if(changed)chapters.replaceChildren(...m.chapters.map(ch=>new Option(ch.title,ch.id)));
+        if(changed)chapters.replaceChildren(...m.chapters.map(ch=>new Option(chapterLabel(m,ch),ch.id)));
         const results=m.chapters.map(ch=>result(child.childId,m.id,ch.id));
         query('#progress-total').textContent=results.filter(r=>r.latest?.complete).length+' of '+m.chapters.length+' covered · '+results.filter(r=>r.mastered).length+' mastered';
         const i=chapters.selectedIndex, ch=m.chapters[i], r=results[i];

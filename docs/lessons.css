@@ -29,24 +29,35 @@
 .lesson-presentation .sidebar, .lesson-presentation .topbar, .lesson-presentation .page-footer { display: none; }
 .lesson-presentation .app-shell { display: block; }
 .lesson-presentation main { max-width: none; padding: 0; }
-.presentation { height: 100vh; height: 100dvh; min-height: 440px; padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto; background: #f4f6f0; }
-.presentation-toolbar { display: flex; align-items: center; gap: 16px; padding-bottom: 12px; }
-.presentation-title { display: flex; flex-direction: column; flex: 1; gap: 3px; text-align: center; }
-.presentation-title strong { font-family: Georgia, serif; font-size: 24px; font-weight: normal; }
-.presentation-title small { font-size: 11px; }
-#teacher-guide { margin-left: auto; white-space: nowrap; }
-.card-reference { display: flex; align-items: center; justify-content: space-between; gap: 14px; color: var(--muted); font-size: 12px; padding: 5px 0 12px; }
-.card-reference label { display: flex; align-items: center; gap: 8px; font-weight: normal; }
-.card-reference select { width: 220px; font-size: 12px; padding: 8px; }
-.teaching-card { background: #fff; border: 1px solid #e1e7de; border-radius: 16px; box-shadow: 0 8px 35px #2c463509; display: flex; align-items: center; justify-content: center; position: relative; min-height: 0; padding: 30px; overflow: hidden; touch-action: pan-y pinch-zoom; }
-.teaching-card img { position: absolute; inset: 0; padding: 30px; display: block; max-width: 100%; max-height: 100%; width: 100%; height: 100%; object-fit: contain; user-select: none; }
-.word-card { font-family: "Arial", sans-serif; font-size: clamp(54px, 15vw, 180px); font-weight: 500; line-height: 1.2; text-align: center; overflow-wrap: anywhere; white-space: pre-wrap; }
-.presentation-controls { display: flex; justify-content: space-between; align-items: center; padding: 14px 0 10px; gap: 14px; }
-.presentation-controls .btn { min-width: 115px; min-height: 48px; font-size: 14px; }
-.presentation-controls span { font-size: 12px; color: var(--muted); }
-.presentation-controls button:disabled { cursor: default; }
-.presentation-save { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.presentation-save .btn { min-height: 44px; }
+.lesson-presentation .workspace main { width:100%; max-width:none; margin:0; }
+.presentation {
+  height:100vh; height:100dvh; box-sizing:border-box; display:grid; grid-template-rows:minmax(0,1fr) auto;
+  background:white; padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+}
+.teaching-card { position:relative; min-width:0; min-height:0; overflow:hidden; touch-action:pan-y pinch-zoom; }
+.teaching-card img { display:block; width:100%; height:100%; object-fit:contain; user-select:none; }
+.word-card {
+  position:absolute; inset:4px; display:grid; place-items:safe center; overflow:auto;
+  font-family:Arial,sans-serif; font-weight:500; line-height:1.16; text-align:center;
+  overflow-wrap:anywhere; white-space:pre-wrap;
+}
+.word-card span { max-width:100%; min-width:0; }
+.presentation-controls {
+  display:flex; align-items:center; gap:4px; padding:2px 5px calc(2px + env(safe-area-inset-bottom));
+  border-top:1px solid var(--line); background:#f8faf6;
+}
+.player-icon {
+  display:grid; place-items:center; flex:0 0 44px; height:44px; padding:0; border:0; border-radius:10px;
+  background:transparent; color:var(--green); font:600 22px/1 system-ui,sans-serif; cursor:pointer;
+}
+.player-icon:focus-visible { outline:2px solid currentColor; outline-offset:-3px; }
+.player-icon:disabled { opacity:.32; cursor:default; }
+#next-card { background:var(--green); color:white; }
+.presentation-title { flex:1; min-width:0; }
+.presentation-title strong,.presentation-title small { display:block; text-overflow:ellipsis; white-space:nowrap; overflow:hidden; }
+.presentation-title strong { font:600 14px/1.3 system-ui,sans-serif; }
+.presentation-title small { font-size:11px; color:var(--muted); }
+.download-progress { display:block; width:100%; height:10px; accent-color:var(--green); }
 .guide-heading { display: flex; justify-content: space-between; align-items: start; gap: 15px; }
 .child-result { border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; }
 .child-result legend { padding: 0 7px; font-weight: 650; }
@@ -55,40 +66,13 @@
 .score-preview { color: var(--green); font-weight: 600; margin: 0; font-size: 13px; }
 .form-error { color: #a42d25; margin: 0; }
 #dialog { max-height: calc(100dvh - 30px); overflow-y: auto; }
-@media (max-width: 600px) {
-  .presentation { padding-left: 12px; padding-right: 12px; }
-  .presentation-toolbar { gap: 8px; flex-wrap: wrap; }
-  .presentation-toolbar > a { font-size: 11px; padding: 9px; }
-  .presentation-title { order: 3; flex-basis: 100%; }
-  .presentation-title strong { font-size: 23px; }
-  .presentation-title small { display: none; }
-  .card-reference { flex-wrap: wrap; gap: 7px; }
-  .card-reference label { width: 100%; }
-  .card-reference select { flex: 1; }
-  .teaching-card { padding: 16px; }
-  .teaching-card img { padding: 16px; }
-  .presentation-save { flex-wrap: wrap; }
-  .presentation-save > .actions { width: 100%; justify-content: space-between; }
-  .resume-card, .chapter-row { flex-wrap: wrap; }
-  .chapter-row > a { min-height: 44px; }
-  .word-card { font-size: clamp(48px, 17vw, 100px); }
-}
-@media (max-height: 570px) and (orientation: landscape) {
-  .presentation { min-height: 280px; }
-  .presentation-title small, .presentation-save > span { display: none; }
-  .presentation-title { order: initial; flex-basis: auto; }
-  .presentation-toolbar { padding-bottom: 4px; }
-  .card-reference { flex-wrap: nowrap; padding-bottom: 5px; }
-  .card-reference label { width: auto; }
-  .teaching-card { padding: 10px; }
-  .teaching-card img { padding: 10px; }
-  .presentation-controls { padding: 6px 0; }
-  .presentation-controls .btn { min-height: 38px; }
-  .presentation-save { justify-content: end; }
+@media (max-width:600px) {
+  .resume-card,.chapter-row { flex-wrap:wrap; }
+  .chapter-row > a { min-height:44px; }
 }
 @media print {
-  .presentation-toolbar, .card-reference, .presentation-controls, .presentation-save { display: none; }
-  .teaching-card { max-height: none; height: 85vh; border: 0; box-shadow: none; }
+  .presentation-controls { display:none; }
+  .teaching-card { height:85vh; }
 }
 
 .subject-materials{margin:16px 0;min-width:0}.subject-materials select{width:100%;min-width:0}.subject-materials p:empty{display:none}.subject-materials h2,.subject-materials p{margin:0}

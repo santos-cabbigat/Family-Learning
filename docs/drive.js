@@ -1,3 +1,4 @@
+import {readPackResponse} from './pack-transfer.js';
 import {validateBackup,mergeRecords,envelope,uid} from './core.js';
 let token='',expires=0,config,googleLoading;
 const API='https://www.googleapis.com/drive/v3/files';
@@ -43,7 +44,7 @@ async function request(url,options={},readToken){
  const error = new Error(message);
  error.status = response.status;
  throw error;}
- return response.status===204?null:options.responseType==='blob'?response.blob():response.json();
+ return response.status===204?null:options.responseType==='pack'?response:response.json();
 }
 async function listFiles(q,readToken){let files=[],pageToken='';do{const params=new URLSearchParams({q,fields:'nextPageToken,files(id,name,createdTime,size,appProperties)',pageSize:'100',orderBy:'createdTime desc'});if(pageToken)params.set('pageToken',pageToken);const result=await request(`${API}?${params}`,{},readToken);files.push(...result.files);pageToken=result.nextPageToken||'';}while(pageToken);return files;}
 const appQuery="trashed = false and appProperties has { key='app' and value='family-learning' }";
@@ -72,7 +73,13 @@ export async function findLessonZip(filename,readToken) {
  const files = await listFiles("trashed = false and name = '" + filename + "'",readToken);
  return files[0]?.id;
 }
-export async function downloadLessonPack(id,readToken){const file=await request(`${API}/${encodeURIComponent(id)}?fields=size`,{},readToken);if(Number(file.size)>100*1024*1024)throw new Error('This pack is larger than the 100 MB limit.');return request(`${API}/${encodeURIComponent(id)}?alt=media`,{responseType:'blob'},readToken);}
+export async function downloadLessonPack(id,readToken,report) {
+ const url = API+'/'+encodeURIComponent(id);
+ const file = await request(url+'?fields=size',{},readToken);
+ if (Number(file.size)>100*1024*1024) throw new Error('This pack is larger than the 100 MB limit.');
+ const response = await request(url+'?alt=media',{responseType:'pack'},readToken);
+ return readPackResponse(response,report,file.size);
+}
 // This separate, user-initiated grant is used only for the chosen private download.
 export function authorizeMaterialRead() {
  const oauth = window.google?.accounts?.oauth2;
@@ -92,14 +99,14 @@ export function authorizeMaterialRead() {
  });
 }
 
-export async function readPrivateMaterial(item, readToken) {
+export async function readPrivateMaterial(item, readToken, report) {
  if (item.file) {
-   try { return await downloadLessonPack(item.file,readToken); }
+   try { return await downloadLessonPack(item.file,readToken,report); }
    catch (error) { if (![403,404].includes(error.status)) throw error; }
  }
  if (item.filename) {
    const id = await findLessonZip(item.filename,readToken);
-   if (id) return downloadLessonPack(id,readToken);
+   if (id) return downloadLessonPack(id,readToken,report);
  }
  return null;
 }
