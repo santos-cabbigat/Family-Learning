@@ -52,7 +52,7 @@
 }
 .player-icon:focus-visible { outline:2px solid currentColor; outline-offset:-3px; }
 .player-icon:disabled { opacity:.32; cursor:default; }
-#next-card { background:var(--green); color:white; }
+#previous-card,#next-card { background:var(--green); color:white; }
 .presentation-title { flex:1; min-width:0; }
 .presentation-title strong,.presentation-title small { display:block; text-overflow:ellipsis; white-space:nowrap; overflow:hidden; }
 .presentation-title strong { font:600 14px/1.3 system-ui,sans-serif; }
@@ -134,3 +134,5 @@
 .projector-frame { width:100%; height:100%; min-height:0; min-width:0; display:grid; place-items:center; overflow:hidden; }
 .projector-frame canvas { display:block; max-width:100%; max-height:100%; object-fit:contain; }
 .science-question { align-self:center; justify-self:center; max-width:34ch; text-align:center; font:500 clamp(19px,5.5vmin,68px)/1.25 system-ui,sans-serif; overflow-wrap:break-word; color:#213d32; }
+
+#exit-slide{font-size:14px;font-weight:650}

@@ -70,7 +70,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
   const downloadSelection=new Map();
   function materialPanel(packs, name, selectedId, refresh) {
     const panel = main.querySelector('.subject-materials');
-    mountDownloads(panel, {grade:gradeFilter, subject:name, selection:downloadSelection, records:getState().records, installed:packs, selectedId, refresh})
+    mountDownloads(panel, {grade:gradeFilter, subject:name, signal:controller.signal, selection:downloadSelection, records:getState().records, installed:packs, selectedId, refresh})
       .catch(error => { if (panel.isConnected) panel.textContent = 'Could not open materials. ' + error.message; });
   }
   let downloadSubject = '';
@@ -121,7 +121,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       (!matching.length && !resources.length ? '<p class="empty">Get a lesson pack in Settings → Downloads. It will appear here once saved.</p>' : '')+'</div>';
     listen(query('#grade-filter'),'change',event => { selectGrade(event.target.value); subject(name); });
   }
-  async function level(id) {
+  async function level(id,selectedChapter) {
     const version = reset();
     loading();
     const loaded = await getPack(id);
@@ -185,8 +185,9 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       try { await mutate(s=>s.records.push(record('material_profile',{materialId:id,grade}))); toast('Material grade saved.'); }
       catch(error){onError('Grade could not save',error.message);}
     });
-    screenMenu(query('#level-options'),[{key:'chapters',label:'Choose chapter',node:query('#chapter-screen')},
+    const chaptersMenu=screenMenu(query('#level-options'),[{key:'chapters',label:'Choose chapter',node:query('#chapter-screen')},
       {key:'options',label:'Material options',node:query('#material-options')}]);
+    if(selectedChapter && m.chapters.some(ch=>ch.id===selectedChapter)){chapterSelect.value=selectedChapter;selectChapter();chaptersMenu.show('chapters');}
   }
   function openWorkbook(page) {
     const blob = activePack?.assets['workbook.pdf'];
@@ -214,10 +215,11 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       <div class="teaching-card" id="teaching-card" tabindex="0" aria-label="Teaching card"></div>
       <div class="picture-caption" hidden><button type="button" id="picture-hint" aria-expanded="false" aria-controls="picture-answer">Picture hint</button><span id="picture-answer" hidden></span></div>
       <div class="presentation-controls">
-        <button type="button" class="player-icon" id="previous-card" aria-label="Previous card">←</button>
+        <button type="button" class="player-icon" id="exit-slide" aria-label="Exit slides and return to chapters">Exit</button>
         <div class="presentation-title" role="status" aria-live="polite" aria-atomic="true">
           <strong id="current-chapter"></strong><small id="card-count"></small>
         </div>
+        <button type="button" class="player-icon" id="previous-card" aria-label="Previous card">←</button>
         <button type="button" class="player-icon" id="next-card" aria-label="Next card">→</button>
         <button type="button" class="player-icon" id="present-fullscreen" aria-label="Full screen" title="Full screen">⛶</button>
         <button type="button" class="player-icon" id="lesson-tools" aria-label="Lesson options" title="Lesson options">⋮</button>
@@ -310,6 +312,9 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       display();
     }
     display();
+    listen(query('#exit-slide'),'click',async()=>{
+      try{if(document.fullscreenElement)await document.exitFullscreen();}finally{location.hash='level/'+materialId+'/'+chapter.id;}
+    });
     listen(query('#previous-card'), 'click', () => step(-1));
     listen(query('#next-card'), 'click', () => step(1));
     listen(document, 'keydown', e => {
@@ -358,18 +363,13 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       };
       modal.addEventListener('close',()=>URL.revokeObjectURL(url),{once:true});
     }
-    function teacherGuide() {
-      const card = chapter.cards[index];
-      resourceDialog(activePack,chapter,card,{dialog,onError});
-    }
     listen(query('#lesson-tools'),'click',() => {
       const saved = latestStop(getState().records,materialId);
       dialog('<div class="guide-heading"><h2>Lesson options</h2><button class="btn" data-close>Close</button></div>' +
         '<div class="stack"><label>Jump to card<select id="card-picker"></select></label>' +
         '<label class="check-label"><input type="checkbox" id="keep-hints"> Always show picture hints on this device</label>' +
         (chapter.cards[index].image ? button('enlarge-card',slides.length?'View original page':'Enlarge card') : '') +
-        button('teacher-guide','Teacher’s guide & lesson plan') + button('print-lesson-resources','Lesson & assessment') + button('end-lesson','Save stopping point and results') +
-        button('back-chapters','Back to chapters') +
+        button('end-lesson','Save stopping point and results') +
         (saved?.cardId === chapter.cards[index].id ? '<p>Saved stopping point · '+escape(date(saved.createdAt))+'</p>' : '')+'</div>');
       const picker = document.querySelector('#card-picker');
       picker.replaceChildren(...chapter.cards.map((c,i)=>new Option((i+1)+' · '+c.label,i)));
@@ -383,10 +383,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       };
       picker.onchange = () => { index=Number(picker.value); slideIndex=0; closeDialog(); display(); };
       if (chapter.cards[index].image) document.querySelector('#enlarge-card').onclick = () => enlargeAsset(chapter.cards[index].image,chapter.cards[index].label);
-      document.querySelector('#teacher-guide').onclick = teacherGuide;
-      document.querySelector('#print-lesson-resources').onclick = () => showLessonResources(activePack,chapter,chapter.cards[index],{dialog,onError});
       document.querySelector('#end-lesson').onclick = () => endLesson(m,chapter,chapter.cards[index],true,display,slideIndex);
-      document.querySelector('#back-chapters').onclick = () => { closeDialog(); location.hash = '#level/'+materialId; };
     });
   }
   function endLesson(material, chapter, card, saveStop, afterSave, slideIndex=0) {

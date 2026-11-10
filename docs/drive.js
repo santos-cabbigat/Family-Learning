@@ -54,7 +54,8 @@ export function connectDrive({chooseAccount=false}={}){
      if(hint && email.toLowerCase()!==hint.toLowerCase())throw new Error('Google returned a different account. Choose your family account in Settings before syncing.');
      try{localStorage.setItem(ACCOUNT_KEY,email);}catch{}
      token=response.access_token;expires=Date.now()+Number(response.expires_in)*1000;
-     readGranted=oauth.hasGrantedAllScopes(response,READ_SCOPE);resolve();
+     readGranted=oauth.hasGrantedAllScopes(response,READ_SCOPE);
+     if(typeof document!=='undefined')document.dispatchEvent(new Event('family-drive-connected'));resolve();
     }catch(error){reject(error);}
    },
    error_callback:()=>reject(new Error('Google sign-in was closed or blocked. Try Connect again in Chrome or Safari.'))
@@ -222,4 +223,65 @@ async function syncBooks(books,library,progress){
   keepLatest(books,ref);
  }
  await restoreBooks([...books.values()],library,progress,local);
+}
+
+const foldersInFlight=new Map();
+const quoted=value=>"'"+String(value).replace(/\\/g,'\\\\').replace(/'/g,"\\'")+"'";
+const prop=(key,value)=>'appProperties has { key='+quoted(key)+' and value='+quoted(value)+' }';
+async function portfolioFolder(family,student,parent){
+ const type=student?'student-portfolio':'student-portfolios';
+ const tags={app:'family-learning',type,family,...(student?{child:student.childId}:{})};
+ const name=student?student.name:'Family Learning – Student Assessments';
+ const key=JSON.stringify([driveAccount(),family,student?.childId]);
+ if(foldersInFlight.has(key))return foldersInFlight.get(key);
+ const findOrCreate=async()=>{
+  const q=[appQuery,"mimeType = 'application/vnd.google-apps.folder'",prop('type',type),prop('family',family)];
+  if(student)q.push(prop('child',student.childId),quoted(parent.id)+' in parents');
+  const folder=(await listFiles(q.join(' and '))).at(-1);
+  if(folder){
+   if(student && folder.name!==name)await request(API+'/'+encodeURIComponent(folder.id),{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});
+   return folder;
+  }
+  return request(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,mimeType:'application/vnd.google-apps.folder',appProperties:tags,...(parent?{parents:[parent.id]}:{})})});
+ };
+ const work=globalThis.navigator?.locks?navigator.locks.request('student-folder-'+key,findOrCreate):findOrCreate();
+ foldersInFlight.set(key,work);try{return await work;}finally{foldersInFlight.delete(key);}
+}
+export function ensureStudentFolders(family,students){
+ return duringTransfer(async()=>{
+  if(!students.length)return [];
+  const root=await portfolioFolder(family);
+  const result=[];
+  for(const student of students)result.push(await portfolioFolder(family,student,root));
+  return result;
+ });
+}
+export function studentEvidenceFiles(family,child){
+ return listFiles([appQuery,prop('type','student-evidence'),prop('family',family),prop('child',child)].join(' and '));
+}
+export async function reserveEvidenceId(){
+ const result=await request(API+'/generateIds?count=1&space=drive');
+ if(!result.ids?.[0])throw new Error('Drive could not reserve a file ID. Retry the upload.');
+ return result.ids[0];
+}
+export function uploadEvidence(item,student,onBytes=()=>{}){
+ return duringTransfer(async()=>{
+  if(!isConnected() || item.account!==driveAccount())throw new Error('Connect the Google account chosen for this scan.');
+  const [folder]=await ensureStudentFolders(item.family,[student]);
+  const metadata={id:item.driveId,name:item.filename,mimeType:'application/pdf',parents:[folder.id],appProperties:{
+   app:'family-learning',type:'student-evidence',family:item.family,child:student.childId,evidence:item.id,category:item.category,date:item.date,...(item.possible>0?{score:String(item.score),possible:String(item.possible)}:{})
+  }};
+  const sha=await zipDigest(item.pdf);
+  const verify=async()=>{
+   const copy=await request(API+'/'+encodeURIComponent(item.driveId)+'?fields=id,size,sha256Checksum,appProperties,parents');
+   if(copy.sha256Checksum!==sha || Number(copy.size)!==item.pdf.size || copy.appProperties?.evidence!==item.id || copy.appProperties?.child!==student.childId || !copy.parents?.includes(folder.id))throw new Error('Drive could not verify this student’s PDF. The scan is saved on this device.');
+  };
+  try{await verify();return;}catch(e){if(e.status!==404)throw e;}
+  const boundary='evidence_'+uid();
+  const body=new Blob([`--${boundary}\r\nContent-Type: application/json\r\n\r\n`,JSON.stringify(metadata),`\r\n--${boundary}\r\nContent-Type: application/pdf\r\n\r\n`,item.pdf,`\r\n--${boundary}--`],{type:`multipart/related; boundary=${boundary}`});
+  try{await uploadBody(body,onBytes);}catch(error){
+   try{await verify();return;}catch{throw error;}
+  }
+  await verify();
+ });
 }

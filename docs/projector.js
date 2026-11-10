@@ -33,9 +33,9 @@ function tuneEdges(canvas){
 }
 
 export function createProjector(signal){
-  let loadingTask,documentBlob,documentPromise,renderTask,observer,revision=0,resizeTimer;
+  let loadingTask,documentBlob,documentPromise,renderTask,observer,stopDisplayWatch,revision=0,resizeTimer;
   function clear(){
-    revision++;clearTimeout(resizeTimer);observer?.disconnect();renderTask?.cancel();renderTask=null;
+    revision++;clearTimeout(resizeTimer);stopDisplayWatch?.();observer?.disconnect();renderTask?.cancel();renderTask=null;
   }
   signal.addEventListener('abort',()=>{clear();loadingTask?.destroy().catch(()=>{});},{once:true});
   async function openPDF(blob){
@@ -122,7 +122,18 @@ export function createProjector(signal){
     // The whole worksheet is never shown while a cropped source illustration loads.
     if(scienceBox)image.style.visibility='hidden';
     image.src=url;
-    observer=new ResizeObserver(()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(draw,120);});
+    const resized=()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(draw,120);};
+    // An external monitor can change pixel density without changing the CSS viewport.
+    let resolution;
+    function watchDensity(){
+      resolution?.removeEventListener?.('change',changed);
+      resolution=window.matchMedia('(resolution: '+(window.devicePixelRatio || 1)+'dppx)');
+      resolution.addEventListener?.('change',changed);
+    }
+    function changed(){watchDensity();resized();}
+    watchDensity();
+    stopDisplayWatch=()=>resolution?.removeEventListener?.('change',changed);
+    observer=new ResizeObserver(resized);
     observer.observe(host);
   }
   return {show,clear};

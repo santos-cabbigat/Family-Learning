@@ -1,6 +1,6 @@
 {
-  "version": "0.7.1",
+  "version": "0.8.0",
   "released": "2026-11-10",
-  "notes": "High-resolution PDF projection, illustrated science slides, fixed teacher-guide controls, grouped downloads with MB progress, and Drive recovery of student progress and offline books.",
+  "notes": "Teachers, lesson plans and printing, student grades and scanned evidence, background book downloads, and paired slide controls.",
   "androidVersion": "0.1.2"
 }

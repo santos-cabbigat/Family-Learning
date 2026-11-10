@@ -1,3 +1,8 @@
+import {listEvidence} from './evidence-store.js';
+import {studentEvidenceFiles} from './drive.js';
+import {teacherDesk} from './teacher-desk.js';
+import {evidencePage,syncStudentEvidence} from './evidence.js';
+import {downloadEvents,downloadJob} from './download-job.js';
 import {rowLink, screenMenu, restorePanel, activePanel, revealInvalid} from './screens.js';
 import {driveGuide} from './drive-guide.js';
 import {transferDisplay} from './pack-transfer.js';
@@ -16,7 +21,9 @@ const icons={home:'<path d="m3 10 9-7 9 7v10H3zM9 20v-7h6v7"/>',library:'<path d
 icons.subjects=icons.library;
 icons['learning-progress']=icons.learners;
 const icon=name=>`<svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
-const nav=[['home','Today'],['subjects','Subjects'],['learning-progress','Progress'],['settings','Settings']];
+icons.teachers=icons.library;icons.students=icons.learners;
+const nav=[['teachers','Teachers'],['subjects','Subjects'],['students','Students'],['settings','Settings']];
+let pageScope=new AbortController();
 let state,registration,busy=false,writeQueue=Promise.resolve(),dirty=false,installPrompt,driveReady=false,driveError='',registrationPromise,updatePending=false,renderedHash=location.hash,pendingWrites=0;
 const channel='BroadcastChannel'in window?new BroadcastChannel('family-learning-state'):null;
 const defaults={thresholdMB:20,thresholdHours:24,snoozeUntil:0};
@@ -52,7 +59,11 @@ function closeDialog(){$('#dialog').close();unlockPage();if(!$('#editor')&&!$('#
 function notice(title,message){dialog(`<h2>${escape(title)}</h2><p>${escape(message)}</p><button class="btn primary" data-close>Got it</button>`);}
 function confirmAction(title,message,action){dialog(`<h2>${escape(title)}</h2><p>${escape(message)}</p><div class="actions"><button class="btn primary" id="confirm-action">Continue</button><button class="btn" data-close>Cancel</button></div>`);$('#confirm-action').onclick=async()=>{closeDialog();try{await action();}catch(e){notice('Could not complete this',e.message);}};}
 async function mutate(fn){
- const task=async()=>{state=await updateState(fn,state);channel?.postMessage('changed');updateStatus();};
+ const task=async()=>{
+  const before=JSON.stringify(profiles().map(p=>[p.childId,p.name]));
+  state=await updateState(fn,state);channel?.postMessage('changed');updateStatus();
+  if(before!==JSON.stringify(profiles().map(p=>[p.childId,p.name])))scheduleStudentFolders();
+ };
  pendingWrites++;writeQueue=writeQueue.then(task,task);try{await writeQueue;}finally{pendingWrites--;}
 }
 async function add(r){await mutate(next=>next.records=mergeRecords(next.records,[r]));}
@@ -71,22 +82,77 @@ function courseCard(c) {
  return rowLink('#book/'+encodeURIComponent(c.id),c.title,[c.subject,c.grade || c.level].filter(Boolean).join(' · '));
 }
 function assignmentRow(a){const c=course(a.courseId),attempts=submissions(a.id);return `<div class="row"><div><div class="row-title">${escape(c?.title||'Material')}</div><p class="muted">${escape(a.goal||'Complete the lesson')}${a.due?' · '+escape(a.due):''}</p><span class="badge ${attempts.length?'':'subtle'}">${attempts.length?`${attempts.length} work record${attempts.length===1?'':'s'}`:'Ready to begin'}</span></div><a class="btn small" href="#assignment/${encodeURIComponent(a.id)}">${attempts.length?'View work':'Open'}</a></div>`;}
-function home() {
- main.innerHTML = heading('Today','') + '<div class="screen-menu">' +
-   rowLink('#subjects','Study a subject','Open lessons saved on this device') +
-   rowLink('#learners','Learning plans','Assignments for each student') + '</div>';
+function teachers(view){return teacherDesk(main,view,{courses:courses(),dialog,onError:notice,signal:pageScope.signal});}
+function home(){return teachers();}
+let portfolioTail=Promise.resolve();
+function namedStudents(){
+ return profiles().filter(p=>!p.seed || !/^Student [0-9]+$/.test(p.name));
 }
+function scheduleStudentFolders(){
+ if(!isConnected())return;
+ const family=state.workspaceId,account=driveAccount();
+ portfolioTail=portfolioTail.catch(()=>{}).then(async()=>{
+  if(!isConnected() || family!==state.workspaceId || account!==driveAccount())return;
+  await syncStudentEvidence(family,namedStudents());
+ }).catch(error=>toast('Student files are waiting for Drive. '+error.message));
+}
+document.addEventListener('family-drive-connected',scheduleStudentFolders);
+function evidence(id){
+ const student=profiles().find(p=>p.childId===id);if(!student)return missing();
+ return evidencePage(main,state.workspaceId,student,{signal:pageScope.signal});
+}
+async function grades(id){
+ const student=profiles().find(p=>p.childId===id);if(!student)return missing();
+ const scope=pageScope,books=await listPacks();if(scope.signal.aborted)return;
+ const rows=[];
+ for(const r of state.records){
+  if(r.kind==='chapter_result' && r.childId===id && r.earned!=null && r.total>0){
+   const m=books.find(b=>b.id===r.materialId),ch=m?.chapters.find(c=>c.id===r.chapterId);
+   rows.push({date:r.createdAt,title:ch?.title || r.chapterId,detail:m?.title || r.materialId,score:r.earned,total:r.total});
+  }
+  if(r.kind==='submission' && r.score!=null && r.score!=='' && Number(r.possible)>0){
+   const a=assignments(id).find(a=>a.id===r.assignmentId);
+   if(a)rows.push({date:r.createdAt,title:course(a.courseId)?.title || 'Assignment',detail:a.goal,score:r.score,total:r.possible});
+  }
+ }
+ const scans=await listEvidence(state.workspaceId,id);let remoteMessage='';
+ const scores=new Map(scans.map(s=>[s.id,s]));
+ if(isConnected()){
+  try{for(const f of await studentEvidenceFiles(state.workspaceId,id)){
+   const p=f.appProperties;
+   if(!scores.has(p.evidence))scores.set(p.evidence,{title:f.name,date:p.date,score:p.score,possible:p.possible,category:p.category});
+  }}catch(e){remoteMessage='Could not load additional scan scores from Drive. '+e.message;}
+ }
+ if(scope.signal.aborted)return;
+ for(const scan of scores.values()){
+  if(Number(scan.possible)>0 && scan.score!=null)rows.push({date:scan.date+'T12:00:00',title:scan.title,detail:scan.category,score:scan.score,total:scan.possible});
+ }
+ rows.sort((a,b)=>b.date.localeCompare(a.date));
+ main.innerHTML=heading(student.name+' · Grades',student.grade || student.level)+(remoteMessage?'<p role="status">'+escape(remoteMessage)+'</p>':'')+'<div class="stack">'+
+  (rows.map(r=>'<article class="card"><strong>'+escape(r.title)+'</strong><p>'+escape(r.detail)+'</p><p>'+escape(r.score)+' / '+escape(r.total)+' · '+Math.round(100*r.score/r.total)+'% · '+escape(date(r.date))+'</p></article>').join('') || '<p>No scored work recorded for this student yet.</p>')+'</div>';
+}
+const downloadLink=document.createElement('a');
+downloadLink.href='#downloads';downloadLink.className='current-download';downloadLink.hidden=true;
+const transferText=document.createElement('span'),transferBar=document.createElement('progress');
+downloadLink.append(transferText,transferBar);document.querySelector('.topbar').append(downloadLink);
+function downloadStatus(){
+ downloadLink.hidden=!downloadJob.running || location.hash.startsWith('#downloads');
+ if(downloadJob.running)transferDisplay(transferBar,transferText,downloadJob.label,downloadJob.done,downloadJob.total);
+}
+downloadEvents.addEventListener('change',downloadStatus);
 function library(){main.innerHTML=heading('Teaching library','Create your own lessons, practice questions and answer keys, then assign them to a student.','<a class="btn primary" href="#create">+ Create material</a>')+`<div class="search-line"><input id="search" aria-label="Search materials" placeholder="Search by title, subject, or level…"></div><div id="course-list" class="screen-menu">${courses().map(courseCard).join('')||'<p class="empty">Create a teaching material to start your library.</p>'}</div>`;$('#search').oninput=e=>{const term=e.target.value.toLowerCase();$('#course-list').innerHTML=courses().filter(c=>`${c.title} ${c.subject} ${c.level}`.toLowerCase().includes(term)).map(courseCard).join('')||'<div class="empty">No matching materials. Try another word or create your own.</div>';};}
 function learners() {
- main.innerHTML = heading('Learning plans','Choose a student.') + '<div class="screen-menu">' +
-   profiles().map(p => rowLink('#learner/'+encodeURIComponent(p.childId), p.name, p.grade || p.level)).join('')+'</div>';
+ main.innerHTML = heading('Students','Choose a student to view their profile, grades and work.') + '<div class="screen-menu">' +
+   profiles().map(p => rowLink('#learner/'+encodeURIComponent(p.childId), p.name, p.grade || p.level)).join('')+rowLink('#settings/students','Manage student profiles')+'</div>';
 }
 function learner(id) {
  const p = profiles().find(person => person.childId === id);
  if (!p) return missing();
  const tasks = assignments(id);
  main.innerHTML = heading(p.name,p.grade || p.level) + '<div class="screen-menu">'+
-   rowLink('#learning-progress/'+encodeURIComponent(id),'Chapter progress')+
+   rowLink('#learning-progress/'+encodeURIComponent(id),'Learning progress')+
+   rowLink('#grades/'+encodeURIComponent(id),'Grades and scores')+
+   rowLink('#evidence/'+encodeURIComponent(id),'Scan and view evidence','Exams, quizzes, workbooks and art')+
    '<button class="screen-row" data-profile="'+escape(id)+'">Edit student profile <span>›</span></button></div>'+
    '<h2 class="screen-group-title">Assigned lessons</h2><div class="screen-menu">'+
    (tasks.map(a => rowLink('#assignment/'+encodeURIComponent(a.id),course(a.courseId)?.title || 'Lesson',a.goal)).join('') ||
@@ -340,6 +406,7 @@ async function runDrive(restore){
   }
   await writeQueue;state=await readState();
   const workspace=state.workspaceId;
+  await syncStudentEvidence(workspace,namedStudents());
   const result=await syncDrive(structuredClone(state),driveProgress,bookLibrary);
   await mutate(s=>{
    if(s.workspaceId!==workspace)throw new Error('The family space changed during sync. The uploaded backup is safe.');
@@ -373,7 +440,9 @@ function fallbackRoute() {
  if (page==='settings') return id==='drive-setup' ? '#settings/drive' : '#settings';
  if (page==='book' && child) return '#book/'+id;
  if (page==='lesson') return '#level/'+id;
- if (page==='learner') return '#learners';
+ if (page==='grades' || page==='evidence')return '#learner/'+id;
+ if(page==='teachers' && id)return '#teachers';
+ if (page==='learner') return '#students';
  if (page==='assignment') return '#learners';
  if (page==='install') return '#settings/offline';
  if (page==='learning-progress' && id) return '#learning-progress';
@@ -383,7 +452,7 @@ function fallbackRoute() {
  return '#home';
 }
 function updateBackButton() {
- const root=['','#home','#subjects','#learning-progress','#settings'].includes(location.hash);
+ const root=['','#home','#teachers','#students','#subjects','#settings'].includes(location.hash);
  const back=document.getElementById('app-back');
  back.hidden=root && !activePanel();
 }
@@ -394,7 +463,7 @@ document.getElementById('app-back').onclick=()=>{
  location.hash=fallbackRoute();
 };
 function missing(){main.innerHTML=heading('This item is not available.','It may belong to another family backup.')+'<a class="btn" href="#home">Return home</a>';}
-function render(){if(!state)return;renderedHash=location.hash;lessons.reset();dirty=false;const [first,raw,chapterId,cardId]=location.hash.slice(1).split('?')[0].split('/');const route=first || 'home';let id;try{id=raw?decodeURIComponent(raw):undefined;}catch{return missing();}$('#navigation').innerHTML=nav.map(([key,label])=>`<a href="#${key}" ${key===route||(key==='subjects'&&['subject','level','lesson'].includes(route))||(key==='learning-progress'&&['learners','learner','assignment'].includes(route))||(key==='settings'&&['sync','install','downloads','library','book','create','edit'].includes(route))?'aria-current="page"':''}>${icon(key)}<span>${label}</span></a>`).join('');const result=({home,downloads:()=>lessons.downloads(),subjects:()=>lessons.subjects(),subject:()=>lessons.subject(id),level:()=>lessons.level(id),lesson:()=>lessons.player(id,chapterId,cardId),'learning-progress':()=>lessons.progress(id),library,learners,learner:()=>learner(id),book:()=>book(id,chapterId),create:()=>editor(),edit:()=>editor(id),assignment:()=>workForm(id),sync:syncPage,settings:()=>settings(id),install:()=>installationPage(main,{native,version:VERSION,prompt:installPrompt})}[route]||home)();result?.catch?.(error=>notice('Could not open lessons',error.message));updateBackButton();updateStatus();if(!native&&location.hostname.endsWith('.chatgpt.site'))main.insertAdjacentHTML('afterbegin',`<div class="note"><strong>This is the older website.</strong> Export your backup in Sync, then <a href="${APP_URL}">open Family Learning on GitHub</a> and import it. Your records here stay intact.</div>`);window.scrollTo(0,0);}
+function render(){if(!state)return;renderedHash=location.hash;pageScope.abort();pageScope=new AbortController();downloadStatus();lessons.reset();dirty=false;const [first,raw,chapterId,cardId]=location.hash.slice(1).split('?')[0].split('/');const route=first || 'home';let id;try{id=raw?decodeURIComponent(raw):undefined;}catch{return missing();}$('#navigation').innerHTML=nav.map(([key,label])=>`<a href="#${key}" ${key===route||(key==='subjects'&&['subject','level','lesson'].includes(route))||(key==='students'&&['learners','learner','assignment','grades','evidence','learning-progress'].includes(route) || key==='teachers'&&['home','library','book','create','edit'].includes(route))||(key==='settings'&&['sync','install','downloads'].includes(route))?'aria-current="page"':''}>${icon(key)}<span>${label}</span></a>`).join('');const result=({home,teachers:()=>teachers(id),students:learners,evidence:()=>evidence(id),grades:()=>grades(id),downloads:()=>lessons.downloads(),subjects:()=>lessons.subjects(),subject:()=>lessons.subject(id),level:()=>lessons.level(id,chapterId),lesson:()=>lessons.player(id,chapterId,cardId),'learning-progress':()=>lessons.progress(id),library,learners,learner:()=>learner(id),book:()=>book(id,chapterId),create:()=>editor(),edit:()=>editor(id),assignment:()=>workForm(id),sync:syncPage,settings:()=>settings(id),install:()=>installationPage(main,{native,version:VERSION,prompt:installPrompt})}[route]||home)();result?.catch?.(error=>notice('Could not open lessons',error.message));updateBackButton();updateStatus();if(!native&&location.hostname.endsWith('.chatgpt.site'))main.insertAdjacentHTML('afterbegin',`<div class="note"><strong>This is the older website.</strong> Export your backup in Sync, then <a href="${APP_URL}">open Family Learning on GitHub</a> and import it. Your records here stay intact.</div>`);window.scrollTo(0,0);}
 async function checkReminder(){if(state&&reminderDue(state.records,state.syncedIds,state.settings)&&!$('#dialog').open){dialog(`<h2>Your work needs a backup.</h2><p>${pendingRecords(state.records,state.syncedIds).length} changes (${bytes(pendingBytes(state.records,state.syncedIds))}) are not verified in Google Drive.</p><p class="muted">Last verified sync: ${escape(date(state.lastSync))}</p><div class="actions"><button class="btn primary" id="go-sync">Open Sync</button><button class="btn" id="snooze">Remind me in an hour</button></div>`);$('#go-sync').onclick=()=>{closeDialog();location.hash='settings/backup';};$('#snooze').onclick=async()=>{await mutate(s=>s.settings.snoozeUntil=Date.now()+3600000);closeDialog();};}}
 document.addEventListener('click',event=>{const target=event.target.closest('button,a');if(!target)return;if(target.hasAttribute('data-close'))closeDialog();if(target.dataset.assign)assign(target.dataset.assign);if(target.dataset.profile)editProfile(target.dataset.profile);if(target.dataset.bookView)book(target.dataset.book,target.dataset.bookView);if(target.hasAttribute('data-print')){if(native)window.FamilyNative.printPage();else window.print();}if(target.matches('a[href^="#"]')&&dirty){event.preventDefault();const href=target.getAttribute('href');confirmAction('Leave this unsaved draft?','The changes on this form have not been saved. Continue only if you want to discard them.',()=>{dirty=false;location.hash=href;});}});
 document.addEventListener('input',e=>{if(e.target.closest('#editor,#work-form,#settings-form,#drive-settings,#profile-form,#assign-form,#lesson-results,#students-form'))dirty=true;});
@@ -406,7 +475,7 @@ window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();ins
 channel?.addEventListener('message',async()=>{state=await readState();updateStatus();if(!dirty&&!$('#dialog').open&&!busy)render();});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkReminder();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('#dialog').open)closeDialog();});
-async function start(){try{await openStore();state=await readState();if(!state){state={workspaceId:uid(),deviceId:uid(),records:seedRecords().filter(r=>r.kind==='profile').map((p,i)=>({...p,name:'Student '+(i+1),grade:'Kindergarten',level:'Kindergarten'})),settings:{...defaults},syncedIds:[],lastSync:null,lastExport:null};state=await updateState(s=>s,state);if(!location.hash)history.replaceState(null,'','#home');}history.replaceState({...history.state,flEntry:true},'');render();checkReminder();setInterval(checkReminder,60000);if(!native&&'serviceWorker'in navigator){let hadController=Boolean(navigator.serviceWorker.controller);navigator.serviceWorker.addEventListener('controllerchange',()=>{if((hadController||updatePending)&&!dirty&&!busy)location.reload();hadController=true;});registrationPromise=navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(reg=>{registration=reg;updateOfflineStatus();}).catch(error=>{const out=$('#offline-status');if(out)out.textContent='Offline setup failed: '+error.message;});}if(!native&&navigator.onLine)refreshDrive();}catch(error){main.innerHTML=heading('Your classroom could not open.','Nothing has been marked saved.')+`<div class="note">${escape(error.message)} Please enable browser storage and try again.</div>`;}}
+async function start(){try{await openStore();state=await readState();if(!state){state={workspaceId:uid(),deviceId:uid(),records:seedRecords().filter(r=>r.kind==='profile').map((p,i)=>({...p,name:'Student '+(i+1),grade:'Kindergarten',level:'Kindergarten'})),settings:{...defaults},syncedIds:[],lastSync:null,lastExport:null};state=await updateState(s=>s,state);if(!location.hash)history.replaceState(null,'','#teachers');}history.replaceState({...history.state,flEntry:true},'');render();checkReminder();setInterval(checkReminder,60000);if(!native&&'serviceWorker'in navigator){let hadController=Boolean(navigator.serviceWorker.controller);navigator.serviceWorker.addEventListener('controllerchange',()=>{if((hadController||updatePending)&&!dirty&&!busy&&!downloadJob.running)location.reload();hadController=true;});registrationPromise=navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).then(reg=>{registration=reg;updateOfflineStatus();}).catch(error=>{const out=$('#offline-status');if(out)out.textContent='Offline setup failed: '+error.message;});}if(!native&&navigator.onLine)refreshDrive();}catch(error){main.innerHTML=heading('Your classroom could not open.','Nothing has been marked saved.')+`<div class="note">${escape(error.message)} Please enable browser storage and try again.</div>`;}}
 window.nativeBackupFinished=async result=>{if(result==='saved'){await mutate(s=>s.lastExport=new Date().toISOString());toast('Backup saved to the location you selected.');if(isSyncPage())render();}else if(result==='failed')notice('Backup was not saved','Please try again and choose an available folder.');};
 window.nativeImportBackup=text=>{try{previewRestore(validateBackup(JSON.parse(text)),false);}catch(error){notice('Could not import',error.message);}};
 window.nativeImportFailed=message=>notice('Could not open backup',message);

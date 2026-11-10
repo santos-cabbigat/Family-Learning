@@ -1,3 +1,4 @@
+import {downloadJob,downloadEvents,startDownloads,reportDownload} from './download-job.js';
 import {readPackResponse,transferDisplay} from './pack-transfer.js';
 import {importPack,listPacks} from './lesson-store.js';
 import {GRADES, materialGrade} from './students.js';
@@ -550,13 +551,14 @@ export async function mountDownloads(panel, options) {
     else selection.delete(item.id);
   }
   function controls(){
-    action.disabled=busy || !selection.size;
+    const locked=busy || downloadJob.running;
+    action.disabled=locked || !selection.size;
     action.textContent='Download selected'+(selection.size?' ('+selection.size+')':'');
-    clear.disabled=busy || !selection.size;connect.disabled=busy;
+    clear.disabled=locked || !selection.size;connect.disabled=locked;
     connect.hidden=isConnected();get('.drive-consent').hidden=isConnected();
-    for(const el of panel.querySelectorAll('input,select,.material-groups button'))el.disabled=busy;
-    for(const el of panel.parentElement?.querySelectorAll('.download-filters select') || [])el.disabled=busy;
-    get('form button').disabled=busy || loading;
+    for(const el of panel.querySelectorAll('input,select,.material-groups button'))el.disabled=locked;
+    for(const el of panel.parentElement?.querySelectorAll('.download-filters select') || [])el.disabled=locked;
+    get('form button').disabled=locked || loading;
   }
   function draw(){
     const query=search.value.toLowerCase().trim().replace(/phonetics?/g,'phonics');
@@ -636,31 +638,38 @@ export async function mountDownloads(panel, options) {
     }
     await driveApi.connectDrive();
   }
-  action.onclick=async()=>{
-    if(busy || !selection.size)return;
-    const queue=[...selection.values()], failures=[];let saved=0;
-    busy=true;controls();
-    try{
+  function updateTransfer(event){
+    if(!panel.isConnected){downloadEvents.removeEventListener('change',updateTransfer);return;}
+    if(event?.installed){local.set(event.installed.id,event.installed);draw();}
+    if(downloadJob.running)transferDisplay(bar,status,downloadJob.label,downloadJob.done,downloadJob.total);
+    else if(downloadJob.label){bar.hidden=true;status.textContent=downloadJob.label;}
+    controls();
+  }
+  downloadEvents.addEventListener('change',updateTransfer,{signal:options.signal});
+  action.onclick=()=>{
+    if(busy || downloadJob.running || !selection.size)return;
+    const queue=[...selection.values()];
+    startDownloads(async()=>{
+      const failures=[];let saved=0;
       if(queue.some(i=>i.driveId || i.file || i.filename))await connectAccount();
       await driveApi.duringTransfer(async()=>{
-      for(const [i,item] of queue.entries()){
-        const label='Book '+(i+1)+' of '+queue.length+' · '+item.title;
-        transferDisplay(bar,status,label);
-        try{
-          const blob=await read(item,(n,total)=>transferDisplay(bar,status,label,n,total));
-          status.textContent='Saving '+item.title+' for offline use…';
-          const assigned=GRADES.includes(item.grade)?item.grade:item.grades?.[0];
-          const pack=await importPack(blob,{id:item.id,grade:assigned,subject:item.subject});
-          local.set(pack.id,pack);selection.delete(item.id);saved++;
-        }catch(error){
-          failures.push(item.title+' — '+error.message);
-          if(!navigator.onLine || error.status===401 || error.name==='QuotaExceededError')break;
+        for(const [i,item] of queue.entries()){
+          const label='Book '+(i+1)+' of '+queue.length+' · '+item.title;
+          reportDownload(label);
+          try{
+            const blob=await read(item,(n,total)=>reportDownload(label,n,total));
+            reportDownload('Saving '+item.title+' for offline use…');
+            const assigned=GRADES.includes(item.grade)?item.grade:item.grades?.[0];
+            const pack=await importPack(blob,{id:item.id,grade:assigned,subject:item.subject});
+            selection.delete(item.id);saved++;reportDownload('Saved '+item.title,undefined,undefined,pack);
+          }catch(error){
+            failures.push(item.title+' — '+error.message);
+            if(!navigator.onLine || error.status===401 || error.name==='QuotaExceededError')break;
+          }
         }
-      }
       });
-      status.textContent=saved+' of '+queue.length+' books saved on this device.'+(failures.length?' '+failures.join(' · ')+' Remaining books stay selected for retry.':'');
-    }catch(error){status.textContent=error.message;}
-    finally{busy=false;bar.hidden=true;draw();}
+      return saved+' of '+queue.length+' books saved on this device.'+(failures.length?' '+failures.join(' · ')+' Remaining books stay selected for retry.':'');
+    });
   };
   connect.onclick=async()=>{busy=true;controls();try{await connectAccount();await searchOnline();}catch(e){status.textContent=e.message;}finally{busy=false;draw();}};
   fileInput.onchange=async()=>{
@@ -679,5 +688,6 @@ export async function mountDownloads(panel, options) {
     if(linked)setSelected(linked,true);
   }
   if(selectedId && local.has(selectedId))status.textContent='Saved on this device.';
+  updateTransfer();
   await searchOnline();
 }

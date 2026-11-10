@@ -177,3 +177,33 @@ test('reconnect reuses the last verified account hint; explicit switching opens 
  assert.deepEqual(seen,[['family@example.org',''],[undefined,'select_account']]);
  drive.disconnectDrive();assert.equal(drive.driveAccount(),'');
 });
+
+test('student folders stay separate by stable child ID, survive renaming and retry verified scan uploads',async()=>{
+ const folders=[],copies=new Map();const {zipDigest}=await import('../docs/pack-transfer.js');
+ const pdf=new Blob(['sample assessment PDF']);const hash=await zipDigest(pdf);let writes=0;
+ const drive=await setup(async(url,opts)=>{
+  const u=new URL(url),q=u.searchParams.get('q'),id=u.pathname.split('/').at(-1);
+  if(q){
+   let rows=[...folders,...copies.values()];
+   for(const [,k,v] of q.matchAll(/key='(\w+)' and value='([^']+)'/g))rows=rows.filter(f=>f.appProperties?.[k]===v);
+   return Response.json({files:rows});
+  }
+  if(u.pathname.includes('/upload/')){
+   const raw=await opts.body.text(),m=JSON.parse(raw.split('\r\n\r\n')[1].split('\r\n--')[0]);
+   writes++;copies.set(m.id,{...m,size:pdf.size,sha256Checksum:hash});
+   return Response.json({id:m.id});
+  }
+  if(opts.method==='POST'){const meta=JSON.parse(opts.body),f={...meta,id:'folder-'+folders.length};folders.push(f);return Response.json(f);}
+  if(opts.method==='PATCH'){Object.assign(folders.find(f=>f.id===id),JSON.parse(opts.body));return Response.json({id});}
+  if(id==='generateIds')return Response.json({ids:['reserved-id']});
+  return copies.has(id)?Response.json(copies.get(id)):Response.json({error:{message:'Missing'}},{status:404});
+ });
+ const first={childId:'a',name:'Sam'},second={childId:'b',name:'Sam'};
+ const [one,two]=await drive.ensureStudentFolders('family',[first,second]);assert.notEqual(one.id,two.id);assert.deepEqual(one.parents,two.parents);
+ first.name='Samuel';assert.equal((await drive.ensureStudentFolders('family',[first]))[0].id,one.id);assert.equal(folders.length,3);
+ const item={id:'example',account:'family@example.org',driveId:await drive.reserveEvidenceId(),family:'family',pdf,filename:'Exam.pdf',category:'Examination',date:'2026-11-10'};
+ await drive.uploadEvidence(item,first);await drive.uploadEvidence(item,first);assert.equal(writes,1);
+ assert.deepEqual((await drive.studentEvidenceFiles('family','a')).map(f=>f.id),['reserved-id']);
+ assert.deepEqual(await drive.studentEvidenceFiles('family','b'),[]);
+ copies.get('reserved-id').sha256Checksum='bad';await assert.rejects(drive.uploadEvidence(item,first),/verify/);
+});
