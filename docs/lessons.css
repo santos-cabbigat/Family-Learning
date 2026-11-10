@@ -86,3 +86,27 @@
 .asset-viewport { max-height:65dvh; overflow:auto; }
 .asset-viewport img { display:block; width:100%; max-width:none; height:auto; }
 .asset-viewport img.enlarged { width:200%; }
+
+.resource-dialog{max-width:850px}.resource-actions{position:sticky;top:-26px;background:white;padding:12px 0;z-index:1;border-bottom:1px solid var(--line)}
+.teaching-plan{font-size:14px;line-height:1.6}.teaching-plan h1{font:28px/1.25 Georgia,serif;margin:20px 0 10px}.teaching-plan h3{margin-top:22px}.teaching-plan li{margin-bottom:7px}.teaching-plan .plan-source{border-top:1px solid var(--line);padding-top:12px;font-size:12px;color:var(--muted)}
+.planning-fields{line-height:2}.reflection-lines,.answer-lines{overflow:hidden;line-height:2}.resource-choice{border-top:1px solid var(--line);margin-top:18px;padding-top:18px}
+#lesson-print-surface{display:none}
+@media print{
+ @page{size:A4 portrait;margin:15mm}
+ body.printing-lesson-resource>*{display:none!important}
+ body.printing-lesson-resource>#lesson-print-surface{display:block!important;color:#172d24;font:11pt/1.5 Arial,sans-serif}
+ body.printing-lesson-resource{background:#fff!important;overflow:visible!important;height:auto!important}
+ #lesson-print-surface h1{font:20pt/1.2 Arial,sans-serif;margin:0 0 8mm}
+ #lesson-print-surface h3{font-size:12pt;margin:6mm 0 2mm;break-after:avoid}
+ #lesson-print-surface p{font-size:11pt;margin:0 0 3mm;line-height:1.5}
+ #lesson-print-surface ul,#lesson-print-surface ol{padding-left:7mm}
+ #lesson-print-surface li{margin-bottom:2mm}
+ #lesson-print-surface .plan-meta,#lesson-print-surface .plan-source{font-size:9pt;color:#46574c}
+ #lesson-print-surface .worksheet-page{break-after:page}
+ #lesson-print-surface .worksheet-page:last-child{break-after:auto}
+ #lesson-print-surface .worksheet-page img{display:block;max-width:100%;max-height:260mm;object-fit:contain;margin:auto}
+ #lesson-print-surface .answer-lines,#lesson-print-surface .reflection-lines{line-height:2;overflow:hidden}
+ #lesson-print-surface .print-word{font-size:24pt;margin:10mm 0}
+}
+.plan-key-image{display:block;width:100%;height:auto}
+@media print{#lesson-print-surface .plan-key-image{max-width:100%;height:auto;break-before:page}}

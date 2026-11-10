@@ -38,6 +38,7 @@ export async function importPack(file, expected = {}) {
         total += entry.originalSize;
         if (total > 180 * 1024 * 1024) return false;
         return entry.name === 'manifest.json' || entry.name === 'workbook.pdf' ||
+          /^resources\/[a-zA-Z0-9_-]+\.pdf$/.test(entry.name) ||
           /^cards\/[a-zA-Z0-9_-]+\.(webp|png|jpg)$/.test(entry.name);
       }
     }, (error, result) => error ? reject(new Error('The ZIP could not be opened. Download it again and retry.')) : resolve(result));

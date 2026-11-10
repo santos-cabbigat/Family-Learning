@@ -47,7 +47,17 @@ export function validatePack(manifest, files) {
     throw new Error('Choose a Family Learning lesson pack ZIP.');
   }
   const ids = new Set();
+  if (manifest.referencePdfs !== undefined && (!Array.isArray(manifest.referencePdfs) || manifest.referencePdfs.some(item =>
+      typeof item.title !== 'string' || typeof item.path !== 'string' ||
+      !/^resources\/[a-zA-Z0-9_-]+\.pdf$/.test(item.path) || !files[item.path]))) {
+    throw new Error('A teaching reference PDF is missing or invalid.');
+  }
+  if (manifest.teacherHandbook !== undefined && (typeof manifest.teacherHandbook !== 'string' ||
+      !/^resources\/[a-zA-Z0-9_-]+\.pdf$/.test(manifest.teacherHandbook) || !files[manifest.teacherHandbook])) {
+    throw new Error('The teacher handbook is missing or invalid.');
+  }
   let count = 0;
+  let individualPdfs = true;
   for (const chapter of manifest.chapters) {
     if (typeof chapter.id !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(chapter.id) || ids.has(chapter.id) || typeof chapter.title !== 'string' ||
         !Array.isArray(chapter.cards) || !chapter.cards.length) throw new Error('A chapter in this pack is invalid.');
@@ -57,6 +67,13 @@ export function validatePack(manifest, files) {
       if (typeof card.id !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(card.id) || ids.has(card.id) || !Number.isInteger(card.page) || card.page < 1 ||
           typeof card.guide !== 'string' || typeof card.label !== 'string') throw new Error('A lesson card is invalid.');
       ids.add(card.id);
+      if (!card.lessonPdf) individualPdfs = false;
+      for (const key of ['lessonPdf','teacherPdf','assessmentPdf']) {
+        if (card[key] !== undefined && (typeof card[key] !== 'string' ||
+            !/^resources\/[a-zA-Z0-9_-]+\.pdf$/.test(card[key]) || !files[card[key]])) {
+          throw new Error('A lesson PDF resource is missing or invalid.');
+        }
+      }
       if (card.answerImage !== undefined && (typeof card.answerImage !== 'string' ||
           !/^cards\/[a-zA-Z0-9_-]+\.(webp|png|jpg)$/.test(card.answerImage) || !files[card.answerImage])) {
         throw new Error('A teacher answer image is missing or invalid.');
@@ -70,7 +87,9 @@ export function validatePack(manifest, files) {
       }
     }
   }
-  if (count > 5000 || manifest.original !== 'workbook.pdf' || !files['workbook.pdf']) {
+  const hasSource = manifest.original === 'workbook.pdf' && files['workbook.pdf'] ||
+    manifest.original === 'individual-pdfs' && individualPdfs;
+  if (count > 5000 || !hasSource) {
     throw new Error('This lesson pack is incomplete or too large.');
   }
   return manifest;

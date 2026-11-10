@@ -29,6 +29,440 @@ const privateBooks = [
   {id:'k5-reading-comprehension-level-c', title:'Reading Comprehension Level C', subject:'Reading Comprehension', filename:'Reading-Comprehension-Level-C-Lesson-Pack.zip', grades:['Kindergarten']},
   {id:'k5-phonics-flashcards', title:'Phonics Flashcards', subject:'Phonics', filename:'Phonics-Flashcards-Lesson-Pack.zip'}
 ];
+privateBooks.push(...[
+  {
+    "id": "nsr-volume-1",
+    "title": "Volume 1 - The Natural World and Life",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "filename": "Natural-Science-Volume-1-Lesson-Pack.zip",
+    "description": "Natural Science Ready - System 365. Secondary science lessons, printable assessments and per-lesson teaching plans."
+  },
+  {
+    "id": "nsr-volume-2",
+    "title": "Volume 2 - Matter and Materials",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "filename": "Natural-Science-Volume-2-Lesson-Pack.zip",
+    "description": "Natural Science Ready - System 365. Secondary science lessons, printable assessments and per-lesson teaching plans."
+  },
+  {
+    "id": "nsr-volume-3",
+    "title": "Volume 3 - Energy, Forces and Motion",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "filename": "Natural-Science-Volume-3-Lesson-Pack.zip",
+    "description": "Natural Science Ready - System 365. Secondary science lessons, printable assessments and per-lesson teaching plans."
+  },
+  {
+    "id": "nsr-volume-4",
+    "title": "Volume 4 - Living Systems and Organisms",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "filename": "Natural-Science-Volume-4-Lesson-Pack.zip",
+    "description": "Natural Science Ready - System 365. Secondary science lessons, printable assessments and per-lesson teaching plans."
+  },
+  {
+    "id": "nsr-volume-5",
+    "title": "Volume 5 - Earth, Weather and Space",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "filename": "Natural-Science-Volume-5-Lesson-Pack.zip",
+    "description": "Natural Science Ready - System 365. Secondary science lessons, printable assessments and per-lesson teaching plans."
+  },
+  {
+    "id": "nsr-volume-6",
+    "title": "Volume 6 - Ecosystems, Environment and Sustainability",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "filename": "Natural-Science-Volume-6-Lesson-Pack.zip",
+    "description": "Natural Science Ready - System 365. Secondary science lessons, printable assessments and per-lesson teaching plans."
+  },
+  {
+    "id": "nsr-bonus-1",
+    "title": "Bonus 1 - Natural Science Misconception Rescue Kit",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "filename": "Natural-Science-Bonus-1-Lesson-Pack.zip",
+    "description": "Natural Science Ready - System 365. Printable teacher support and assessment resources, with a guide for each resource."
+  },
+  {
+    "id": "nsr-bonus-2",
+    "title": "Bonus 2 - Natural Science Differentiation Toolkit",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "filename": "Natural-Science-Bonus-2-Lesson-Pack.zip",
+    "description": "Natural Science Ready - System 365. Printable teacher support and assessment resources, with a guide for each resource."
+  },
+  {
+    "id": "nsr-bonus-3",
+    "title": "Bonus 3 - Natural Science Assessment Builder",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "filename": "Natural-Science-Bonus-3-Lesson-Pack.zip",
+    "description": "Natural Science Ready - System 365. Printable teacher support and assessment resources, with a guide for each resource."
+  },
+  {
+    "id": "nsr-bonus-4",
+    "title": "Bonus 4 - Early Finisher and Science Challenge Vault",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "filename": "Natural-Science-Bonus-4-Lesson-Pack.zip",
+    "description": "Natural Science Ready - System 365. Printable teacher support and assessment resources, with a guide for each resource."
+  },
+  {
+    "id": "nsr-bonus-5",
+    "title": "Bonus 5 - Student Progress and Intervention System",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "filename": "Natural-Science-Bonus-5-Lesson-Pack.zip",
+    "description": "Natural Science Ready - System 365. Printable teacher support and assessment resources, with a guide for each resource."
+  }
+]);
+privateBooks.forEach(book=>{book.collection=book.id.startsWith('nsr-') ? 'Natural Science Ready - System 365' : 'K5 Learning';});
+privateBooks.push(...[
+  {
+    "id": "science-diagrams-human-body-health-1",
+    "title": "Science Diagrams - Human Body and Health - Part 1",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Human-Body-Health-Part-1-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-human-body-health-2",
+    "title": "Science Diagrams - Human Body and Health - Part 2",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Human-Body-Health-Part-2-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-human-body-health-3",
+    "title": "Science Diagrams - Human Body and Health - Part 3",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Human-Body-Health-Part-3-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-cells-genetics-1",
+    "title": "Science Diagrams - Cells and Genetics - Part 1",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Cells-Genetics-Part-1-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-cells-genetics-2",
+    "title": "Science Diagrams - Cells and Genetics - Part 2",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Cells-Genetics-Part-2-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-cells-genetics-3",
+    "title": "Science Diagrams - Cells and Genetics - Part 3",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Cells-Genetics-Part-3-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-plants-animals-life-1",
+    "title": "Science Diagrams - Plants, Animals and Life - Part 1",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Plants-Animals-Life-Part-1-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-plants-animals-life-2",
+    "title": "Science Diagrams - Plants, Animals and Life - Part 2",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Plants-Animals-Life-Part-2-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-plants-animals-life-3",
+    "title": "Science Diagrams - Plants, Animals and Life - Part 3",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Plants-Animals-Life-Part-3-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-ecology-environment-1",
+    "title": "Science Diagrams - Ecology and Environment - Part 1",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Ecology-Environment-Part-1-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-ecology-environment-2",
+    "title": "Science Diagrams - Ecology and Environment - Part 2",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Ecology-Environment-Part-2-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-space-1",
+    "title": "Science Diagrams - Space and Astronomy - Part 1",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Space-Part-1-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-space-2",
+    "title": "Science Diagrams - Space and Astronomy - Part 2",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Space-Part-2-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-earth-rocks-1",
+    "title": "Science Diagrams - Earth and Rocks - Part 1",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Earth-Rocks-Part-1-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-earth-rocks-2",
+    "title": "Science Diagrams - Earth and Rocks - Part 2",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Earth-Rocks-Part-2-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-weather-water-climate-1",
+    "title": "Science Diagrams - Weather, Water and Climate - Part 1",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Weather-Water-Climate-Part-1-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-weather-water-climate-2",
+    "title": "Science Diagrams - Weather, Water and Climate - Part 2",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Weather-Water-Climate-Part-2-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-matter-chemistry-1",
+    "title": "Science Diagrams - Matter and Chemistry - Part 1",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Matter-Chemistry-Part-1-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-matter-chemistry-2",
+    "title": "Science Diagrams - Matter and Chemistry - Part 2",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Matter-Chemistry-Part-2-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-matter-chemistry-3",
+    "title": "Science Diagrams - Matter and Chemistry - Part 3",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Matter-Chemistry-Part-3-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-forces-energy-1",
+    "title": "Science Diagrams - Forces, Energy and Physics - Part 1",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Forces-Energy-Part-1-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-forces-energy-2",
+    "title": "Science Diagrams - Forces, Energy and Physics - Part 2",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Forces-Energy-Part-2-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-forces-energy-3",
+    "title": "Science Diagrams - Forces, Energy and Physics - Part 3",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Forces-Energy-Part-3-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-forces-energy-4",
+    "title": "Science Diagrams - Forces, Energy and Physics - Part 4",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Forces-Energy-Part-4-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-bonus-1",
+    "title": "Science Diagrams Bonus - Classroom Science Dynamics and Challenges",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Bonus-1-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-bonus-2",
+    "title": "Science Diagrams Bonus - Printable Science Games and Activities",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Bonus-2-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-bonus-3",
+    "title": "Science Diagrams Bonus - Science Assessments and Tests - Printable Classroom Assessment Pack",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Bonus-3-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-bonus-4",
+    "title": "Science Diagrams Bonus - Science Quizzes and Trivia, Part 1 - Human Body, Earth and Space",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Bonus-4-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  },
+  {
+    "id": "science-diagrams-bonus-5",
+    "title": "Science Diagrams Bonus - Science Quizzes and Trivia, Part 2 - Quizzes 11 to 50",
+    "subject": "Science",
+    "grades": [
+      "Other"
+    ],
+    "collection": "Science Diagrams (English)",
+    "filename": "Science-Diagrams-Bonus-5-Lesson-Pack.zip",
+    "description": "Private science diagrams, per-lesson teaching plans, printable resources and parent accuracy notes."
+  }
+]);
 const retiredSamples = new Set(['family-making-ten','family-observing-leaves']);
 const privateKey = 'family-learning-personal-pack-links';
 function privateLinks() {
@@ -81,6 +515,7 @@ export async function mountDownloads(panel, options) {
   panel.innerHTML = `<form class="stack material-search">
       <label>Search materials<input type="search" placeholder="e.g. Phonics" autocomplete="off"></label>
       <div><button class="btn" type="submit">Search online</button></div></form>
+    <label>Collection<select class="material-collection"><option value="">All collections</option></select></label>
     <label>Available materials<select class="material-select"></select></label>
     <div><button class="btn primary material-action" type="button">Download</button></div>
     <progress class="download-progress" aria-label="Lesson pack download progress" max="100" hidden></progress>
@@ -96,6 +531,7 @@ export async function mountDownloads(panel, options) {
       <label>Lesson pack ZIP<input type="file" accept=".zip,application/zip,application/x-zip-compressed"></label></details>`;
   const get = rule => panel.querySelector(rule);
   const selector = get('.material-select'), action = get('.material-action');
+  const collectionSelect = get('.material-collection');
   const search = get('input[type=search]'), form = get('form');
   const status = get('.material-status'), source = get('.material-source');
   const permission = get('.material-permission'), allow = get('.material-allow');
@@ -122,20 +558,27 @@ export async function mountDownloads(panel, options) {
   let revision = 0;
 
   function include(item) {
+    const alreadyInstalled = installed.includes(item);
+    item = {...privateBooks.find(book=>book.id===item.id),...item};
     if (!validId(item.id) || retiredSamples.has(item.id) || materials.has(item.id)) return;
-    if (local.has(item.id) && !installed.includes(item)) return;
+    if (local.has(item.id) && !alreadyInstalled) return;
     const assigned = materialGrade(records,item);
     const privatePack = item.driveId || item.file || item.filename;
     if (subject && item.subject !== subject && !(privatePack && !item.subject)) return;
     if (assigned === 'Unassigned' && GRADES.includes(grade) && item.grades && !item.grades.includes(grade)) return;
     if (grade !== 'All grades' && assigned !== grade && !(privatePack && assigned === 'Unassigned' && !local.has(item.id))) return;
-    materials.set(item.id,{...item,grade:assigned});
+    materials.set(item.id,{...item,grade:assigned,collection:item.collection || (item.id.startsWith('k5-') ? 'K5 Learning' : 'Other materials')});
   }
   function draw() {
     const query = search.value.trim().toLowerCase().replace(/phonetics?/g,'phonics');
+    const selectedCollection=collectionSelect.value;
+    collectionSelect.replaceChildren(new Option('All collections',''),...[...new Set([...materials.values()].map(item=>item.collection))].sort().map(name=>new Option(name,name)));
+    if([...collectionSelect.options].some(o=>o.value===selectedCollection))collectionSelect.value=selectedCollection;
+    collectionSelect.disabled=busy;
     selector.replaceChildren();
     for (const item of materials.values()) {
-      if (![item.title,item.subject,item.grade,item.description].join(' ').toLowerCase().includes(query)) continue;
+      if (collectionSelect.value && item.collection !== collectionSelect.value) continue;
+      if (![item.title,item.subject,item.grade,item.description,item.collection].join(' ').toLowerCase().includes(query)) continue;
       const label = local.has(item.id) ? 'Ready on this device' : item.driveId ? 'My Drive backup' :
         item.file || item.filename ? 'Requires your private pack' : 'Available';
       selector.add(new Option([item.title,item.subject,item.grade === 'Unassigned' ? item.grades?.join(' / ') : item.grade,label].filter(Boolean).join(' · '),item.id));
@@ -160,6 +603,7 @@ export async function mountDownloads(panel, options) {
     status.textContent = '';
     draw();
   }
+  collectionSelect.onchange=resetChoice;
   async function searchOnline() {
     const current = ++revision;
     loading = true;
@@ -227,7 +671,7 @@ export async function mountDownloads(panel, options) {
       return;
     }
     install(async () => {
-      const response = await fetch(new URL(item.url,location.href),{credentials:'omit',signal:AbortSignal.timeout(120000)});
+      const response = await fetch(new URL(item.url,location.href),{credentials:'omit',signal:AbortSignal.timeout(600000)});
       if (!response.ok) throw new Error('This package could not be downloaded. Try Search online again.');
       return readPackResponse(response,reportBytes);
     },item);

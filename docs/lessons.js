@@ -5,6 +5,7 @@ import { record, latestProfiles } from './core.js';
 import { SUBJECTS, latestStop, chapterProgress } from './learning-core.js';
 import { getPack, listPacks, importPack } from './lesson-store.js';
 import {mountDownloads,rememberDownloadLink} from './package-catalog.js';
+import {resourceDialog,showLessonResources,downloadBlob} from './lesson-resources.js';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -139,12 +140,25 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       '<div class="screen-menu">'+rowLink(resume,savedCard?'Continue lesson':'Start lesson',chapterLabel(m,savedChapter || m.chapters[0]))+'</div>'+
       '<div id="level-options"><section id="chapter-screen" class="card stack"><h2>Choose a chapter</h2>'+
       '<label>Find a chapter<input id="find-chapter" type="search"></label><label>Chapter<select id="chapter-list"></select></label>'+
-      '<a class="btn primary" id="teach-chapter">Teach chapter</a></section>'+
+      '<label>Lesson / activity<select id="lesson-list"></select></label>'+
+      '<a class="btn primary" id="teach-chapter">Teach lesson</a>'+
+      '<div class="actions">'+button('plan-selected-lesson','Teacher’s guide & lesson plan')+button('print-selected-lesson','Lesson & assessment')+'</div></section>'+
       '<section id="material-options" class="card stack"><h2>Material options</h2><label>Grade<select id="material-grade"><option value="">Choose grade</option>'+
       GRADES.map(g=>'<option'+(materialGrade(getState().records,m)===g?' selected':'')+'>'+g+'</option>').join('')+
-      '</select></label>'+button('save-material-grade','Save grade')+'</section></div>';
-    const chapterSelect=query('#chapter-list'), teach=query('#teach-chapter');
-    const selectChapter=()=>{teach.hidden=!chapterSelect.value;teach.href='#lesson/'+m.id+'/'+chapterSelect.value;};
+      '</select></label>'+button('save-material-grade','Save grade')+
+      '<div class="actions">'+button('download-original-pdf','Download original PDF')+
+      (m.teacherHandbook ? button('download-teacher-handbook','Download all lesson plans PDF') : '')+'</div></section></div>';
+    for (const [i,reference] of (m.referencePdfs || []).entries()) {
+      const node=document.createElement('button');node.className='btn';node.textContent=reference.title;node.type='button';
+      listen(node,'click',()=>downloadBlob(activePack.assets[reference.path],reference.title.replace(/[^a-zA-Z0-9 -]/g,'')+'.pdf'));
+      query('#material-options .actions').append(node);
+    }
+    const chapterSelect=query('#chapter-list'), lessonSelect=query('#lesson-list'), teach=query('#teach-chapter');
+    const selection=()=>{const chapter=m.chapters.find(c=>c.id===chapterSelect.value);return {chapter,card:chapter?.cards.find(c=>c.id===lessonSelect.value)};};
+    const selectLesson=()=>{const {chapter,card}=selection();teach.hidden=!card;teach.href=card?'#lesson/'+m.id+'/'+chapter.id+'/'+card.id:'#';
+      query('#plan-selected-lesson').disabled=!card;query('#print-selected-lesson').disabled=!card;};
+    const selectChapter=()=>{const chapter=m.chapters.find(c=>c.id===chapterSelect.value);
+      lessonSelect.replaceChildren(...(chapter?.cards || []).map((c,i)=>new Option((i+1)+' · '+(c.lessonTitle || c.label)+' · p. '+c.page,c.id)));selectLesson();};
     function filterChapters(term) {
       const matches=m.chapters.map(ch=>new Option(chapterLabel(m,ch),ch.id))
         .filter(option=>option.text.toLowerCase().includes(term));
@@ -155,6 +169,13 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     filterChapters('');
     listen(query('#find-chapter'),'input',event=>filterChapters(event.target.value.trim().toLowerCase()));
     listen(chapterSelect,'change',selectChapter);
+    listen(lessonSelect,'change',selectLesson);
+    listen(query('#plan-selected-lesson'),'click',()=>{const {chapter,card}=selection();if(card)resourceDialog(activePack,chapter,card,{dialog,onError});});
+    listen(query('#print-selected-lesson'),'click',()=>{const {chapter,card}=selection();if(card)showLessonResources(activePack,chapter,card,{dialog,onError});});
+    listen(query('#download-original-pdf'),'click',()=>{const card=selection().card;
+      const blob=activePack.assets['workbook.pdf'] || activePack.assets[card?.lessonPdf];
+      if(blob)downloadBlob(blob,(activePack.assets['workbook.pdf'] ? m.title : card.lessonTitle || card.label).replace(/[^a-zA-Z0-9 -]/g,'')+'.pdf');});
+    listen(query('#download-teacher-handbook'),'click',()=>downloadBlob(activePack.assets[m.teacherHandbook],m.title.replace(/[^a-zA-Z0-9 -]/g,'')+' - Teacher lesson plans.pdf'));
     listen(query('#save-material-grade'),'click',async()=>{
       const grade=query('#material-grade').value;
       if(!GRADES.includes(grade))return toast('Choose a grade first.');
@@ -245,7 +266,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
         '<div class="word-card"><span>' + escape(card.text) + '</span></div>';
       fitText();
       query('#current-chapter').textContent = chapterLabel(m,chapter);
-      query('#card-count').textContent = 'Card '+(index+1)+' of '+chapter.cards.length;
+      query('#card-count').textContent = (card.lessonTitle ? card.lessonTitle+' · Lesson ' : 'Card ')+(index+1)+' of '+chapter.cards.length;
       const previous = query('#previous-card'), next = query('#next-card');
       const last = index === chapter.cards.length-1;
       const finalCard = last && chapterIndex === m.chapters.length-1;
@@ -321,13 +342,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     }
     function teacherGuide() {
       const card = chapter.cards[index];
-      dialog('<div class="guide-heading"><h2>Teacher’s guide</h2><button class="btn" data-close>Close</button></div><h3>' +
-        escape(chapterLabel(m,chapter)) + '</h3><p class="muted">Workbook page ' + card.page + ' · Card ' + (index + 1) +
-        '</p><p>' + escape(card.guide) + '</p><div class="note green">Give each child their own turn. Record a score such as 4 out of 5 based on the work you actually checked.</div><div class="actions lesson-secondary">' +
-        (card.answerImage ? button('show-answer','Show answer key') : '') + button('show-workbook','Open workbook for printing') + button('chapter-score','Record chapter scores') + '</div><p class="muted lesson-secondary">Your workbook is included in this private pack. Keep materials within their permitted use.</p>');
-      if (card.answerImage) document.querySelector('#show-answer').onclick = () => enlargeAsset(card.answerImage,'Answer key · '+chapter.title);
-      document.querySelector('#show-workbook').onclick = () => openWorkbook(card.pdfPage);
-      document.querySelector('#chapter-score').onclick = () => endLesson(m,chapter,card,false,display);
+      resourceDialog(activePack,chapter,card,{dialog,onError});
     }
     listen(query('#lesson-tools'),'click',() => {
       const saved = latestStop(getState().records,materialId);
@@ -335,7 +350,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
         '<div class="stack"><label>Jump to card<select id="card-picker"></select></label>' +
         '<label class="check-label"><input type="checkbox" id="keep-hints"> Always show picture hints on this device</label>' +
         (chapter.cards[index].image ? button('enlarge-card','Enlarge card') : '') +
-        button('teacher-guide','Teacher’s guide') + button('end-lesson','Save stopping point and results') +
+        button('teacher-guide','Teacher’s guide & lesson plan') + button('print-lesson-resources','Lesson & assessment') + button('end-lesson','Save stopping point and results') +
         button('back-chapters','Back to chapters') +
         (saved?.cardId === chapter.cards[index].id ? '<p>Saved stopping point · '+escape(date(saved.createdAt))+'</p>' : '')+'</div>');
       const picker = document.querySelector('#card-picker');
@@ -351,6 +366,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       picker.onchange = () => { index=Number(picker.value); closeDialog(); display(); };
       if (chapter.cards[index].image) document.querySelector('#enlarge-card').onclick = () => enlargeAsset(chapter.cards[index].image,chapter.cards[index].label);
       document.querySelector('#teacher-guide').onclick = teacherGuide;
+      document.querySelector('#print-lesson-resources').onclick = () => showLessonResources(activePack,chapter,chapter.cards[index],{dialog,onError});
       document.querySelector('#end-lesson').onclick = () => endLesson(m,chapter,chapter.cards[index],true,display);
       document.querySelector('#back-chapters').onclick = () => { closeDialog(); location.hash = '#level/'+materialId; };
     });

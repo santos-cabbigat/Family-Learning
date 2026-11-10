@@ -37,7 +37,7 @@ export const isConnected=()=>Boolean(token&&Date.now()<expires-60000);
 export function disconnectDrive(){token='';expires=0;}
 async function request(url,options={},readToken){
  if(!readToken&&!isConnected())throw new Error('Your Google sign-in expired. Reconnect and retry; saved work is still on this device.');
- let response;try{response=await fetch(url,{...options,signal:AbortSignal.timeout(120000),headers:{Authorization:`Bearer ${readToken || token}`,...options.headers}});}catch{throw new Error('Google Drive did not respond. Check your internet connection and retry. Nothing is marked synced.');}
+ let response;try{response=await fetch(url,{...options,signal:AbortSignal.timeout(options.responseType==='pack'?600000:120000),headers:{Authorization:`Bearer ${readToken || token}`,...options.headers}});}catch{throw new Error('Google Drive did not respond. Check your internet connection and retry. Nothing is marked synced.');}
  if(!response.ok){if(response.status===401 && !readToken)disconnectDrive();let reason='';try{reason=(await response.json()).error?.message||'';}catch{}
  const message = response.status===401 ? 'Your Google sign-in expired. Reconnect and retry.' :
    'Google Drive request failed ('+response.status+'). '+(reason || 'Check your connection and account permissions.');

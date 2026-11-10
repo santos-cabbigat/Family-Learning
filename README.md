@@ -5,7 +5,15 @@ Source: https://github.com/santos-cabbigat/Family-Learning
 
 The GitHub Actions workflow tests and publishes `docs/`. No purchased workbook or learner records belong in this repository.
 
-## Current edition 0.3.3
+## Current edition 0.6.0
+
+- Natural Science Ready volumes and bonuses, plus Science Diagrams topic collections, are discovered by exact private Drive ZIP filenames. The public catalog contains descriptive metadata only.
+- Each prepared science lesson/resource has a companion teaching plan and printable PDF. Student quick checks exclude teacher marking points. Publisher answer-key pages are separate teacher resources.
+- Existing subject packs gain preparation, objectives, teaching procedures, differentiation, assessment and reflection through the teaching-plan renderer; original card guidance and supplied answer images remain available.
+- Print student sheets, teacher plans or marking keys separately, or download included PDFs. Browser/OS printer availability still needs verification on the user’s actual device.
+- Multi-document diagram packs retain each original PDF rather than duplicating it into a second merged workbook.
+
+## Existing learning and backup functions
 
 - Phonics A private pack: one activity per card, hidden teacher guidance, workbook page reference, manual stopping point, separate scores and attempt history per child.
 - Local records and packs use separate IndexedDB databases. Updates preserve both.
