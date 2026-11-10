@@ -24,7 +24,7 @@ export function validateLearningRecord(r) {
   if (typeof r.materialId !== 'string' || !r.materialId ||
       typeof r.chapterId !== 'string' || !r.chapterId) throw new Error('A lesson record is incomplete.');
   if (r.kind === 'lesson_stop') {
-    if (typeof r.cardId !== 'string' || !Array.isArray(r.childIds) ||
+    if ((r.slideIndex!==undefined && (!Number.isInteger(r.slideIndex) || r.slideIndex<0)) || typeof r.cardId !== 'string' || !Array.isArray(r.childIds) ||
         !r.childIds.length || r.childIds.some(id => typeof id !== 'string')) {
       throw new Error('The lesson stopping point is invalid.');
     }

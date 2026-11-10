@@ -1,7 +1,7 @@
 import {GRADES} from './students.js';
 import {validateLearningRecord} from './learning-core.js';
 export const SCHEMA=1;
-export const VERSION='0.6.0';
+export const VERSION='0.7.1';
 export const uid=()=>{if(crypto.randomUUID)return crypto.randomUUID();const b=crypto.getRandomValues(new Uint8Array(16));b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;const h=[...b].map(v=>v.toString(16).padStart(2,'0')).join('');return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;};
 let lastRecordTime=0;
 export function record(kind,data){lastRecordTime=Math.max(Date.now(),lastRecordTime+1);return {id:uid(),kind,createdAt:new Date(lastRecordTime).toISOString(),...data};}
@@ -9,6 +9,17 @@ export function envelope(workspaceId,records,deviceId,settings){return {app:'fam
 export function validateBackup(data){
  if(!data||data.app!=='family-learning'||data.schema!==SCHEMA||(typeof data.workspaceId!=='string'||!data.workspaceId)||!Array.isArray(data.records))throw new Error('This is not a supported Family Learning backup.');
  if(data.records.length>50000)throw new Error('This backup is too large for this version.');
+ if(data.books !== undefined){
+  const seen=new Set();
+  if(!Array.isArray(data.books)||data.books.length>5000)throw new Error('Invalid book inventory in backup.');
+  for(const b of data.books){
+   if(!b||typeof b.id!=='string'||!/^[a-z0-9-]+$/.test(b.id)||seen.has(b.id)||
+     typeof b.fileId!=='string'||!/^[A-Za-z0-9_-]+$/.test(b.fileId)||!(/^[a-f0-9]{64}$/).test(b.sha256)||
+     typeof b.title!=='string'||!Number.isFinite(Date.parse(b.revision))||
+     (b.grade && !GRADES.includes(b.grade)))throw new Error('Invalid book entry in backup.');
+   seen.add(b.id);
+  }
+ }
  if(data.settings){for(const [key,min,max] of [['thresholdMB',1,500],['thresholdHours',1,720],['masteryTarget',1,100]])if(!Number.isFinite(data.settings[key])||data.settings[key]<min||data.settings[key]>max)throw new Error('Backup settings are invalid.');data.settings={thresholdMB:data.settings.thresholdMB,thresholdHours:data.settings.thresholdHours,masteryTarget:data.settings.masteryTarget};}
  const ids=new Set();for(const r of data.records){if(!r||typeof r.id!=='string'||ids.has(r.id)||!['profile','course','assignment','submission','lesson_stop','chapter_result','material_profile'].includes(r.kind)||!Number.isFinite(Date.parse(r.createdAt)))throw new Error('This backup contains invalid or duplicate records.');ids.add(r.id);
  if(['lesson_stop','chapter_result'].includes(r.kind))validateLearningRecord(r);

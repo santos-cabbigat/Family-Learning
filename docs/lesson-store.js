@@ -1,4 +1,5 @@
 import { unzip, zip } from './vendor/fflate.js';
+import {zipDigest} from './pack-transfer.js';
 import { validatePack } from './learning-core.js';
 
 let connection;
@@ -23,8 +24,14 @@ export async function getPack(id) {
 export async function listPacks() {
   const db = await database();
   return new Promise((resolve, reject) => {
-    const request = db.transaction('packs').objectStore('packs').getAll();
-    request.onsuccess = () => resolve(request.result.map(p => p.manifest));
+    const request = db.transaction('packs').objectStore('packs').openCursor();
+    const manifests = [];
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return resolve(manifests);
+      manifests.push(cursor.value.manifest);
+      cursor.continue();
+    };
     request.onerror = () => reject(request.error);
   });
 }
@@ -54,6 +61,7 @@ export async function importPack(file, expected = {}) {
     throw new Error('This pack is filed under ' + manifest.grade + '. Choose that grade or All grades and try again.');
   }
   if (expected.grade) manifest.grade = expected.grade;
+  manifest.zipHash = await zipDigest(file);
   const assets = {};
   for (const [path, value] of Object.entries(files)) {
     if (path === 'manifest.json') continue;

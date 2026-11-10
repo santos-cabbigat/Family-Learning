@@ -1,3 +1,5 @@
+import {createProjector} from './projector.js';
+import {scienceSlides,drawScienceSlide} from './science-slides.js';
 import {legacyPictureHints} from './picture-hints.js';
 import {rowLink,screenMenu} from './screens.js';
 import {GRADES,activeStudents,materialGrade} from './students.js';
@@ -65,9 +67,10 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
   function installPanel() {
     return '<p class="empty">Get this lesson pack in Settings → Downloads.</p>';
   }
+  const downloadSelection=new Map();
   function materialPanel(packs, name, selectedId, refresh) {
     const panel = main.querySelector('.subject-materials');
-    mountDownloads(panel, {grade:gradeFilter, subject:name, records:getState().records, installed:packs, selectedId, refresh})
+    mountDownloads(panel, {grade:gradeFilter, subject:name, selection:downloadSelection, records:getState().records, installed:packs, selectedId, refresh})
       .catch(error => { if (panel.isConnected) panel.textContent = 'Could not open materials. ' + error.message; });
   }
   let downloadSubject = '';
@@ -81,7 +84,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     loading();
     const packs = await listPacks();
     if (version !== routeVersion) return;
-    main.innerHTML = title('Downloads','Choose a grade and subject, then download a lesson pack.') +
+    main.innerHTML = title('Downloads','Select individual books or a group for offline teaching.') +
       '<div class="download-filters">' + gradeControl() +
       '<label>Subject<select id="download-subject"><option value="">All subjects</option>' +
       SUBJECTS.map(name => '<option' + (downloadSubject === name ? ' selected' : '') + '>' + escape(name) + '</option>').join('') +
@@ -133,7 +136,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     const stop = latestStop(getState().records, id);
     const savedChapter = m.chapters.find(c => c.id === stop?.chapterId);
     const savedCard = savedChapter?.cards.find(c => c.id === stop?.cardId);
-    const resume = savedCard ? '#lesson/' + id + '/' + savedChapter.id + '/' + savedCard.id :
+    const resume = savedCard ? '#lesson/' + id + '/' + savedChapter.id + '/' + savedCard.id + (stop.slideIndex?'?slide='+(stop.slideIndex+1):'') :
       '#lesson/' + id + '/' + m.chapters[0].id;
     const grade = materialGrade(getState().records,m);
     main.innerHTML = title(m.title, m.level && m.level !== grade ? m.level+' · '+grade : grade) +
@@ -204,6 +207,8 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     if (chapterIndex < 0) { location.hash = '#level/' + materialId; return; }
     let chapter = m.chapters[chapterIndex];
     let index = Math.max(0, chapter.cards.findIndex(c => c.id === cardId));
+    let slides=scienceSlides(chapter.cards[index]);
+    let slideIndex=Math.min(Math.max(0,slides.length-1),Math.max(0,parseInt(new URLSearchParams(location.hash.split('?')[1]).get('slide'),10)-1 || 0));
     document.body.classList.add('lesson-presentation');
     main.innerHTML = `<section class="presentation" aria-label="Lesson presentation">
       <div class="teaching-card" id="teaching-card" tabindex="0" aria-label="Teaching card"></div>
@@ -218,6 +223,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
         <button type="button" class="player-icon" id="lesson-tools" aria-label="Lesson options" title="Lesson options">⋮</button>
       </div></section>`;
     const stage = query('#teaching-card');
+    const projector=createProjector(controller.signal);
     const caption = query('.picture-caption');
     const hintButton = query('#picture-hint');
     const hintText = query('#picture-answer');
@@ -258,37 +264,49 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
     controller.signal.addEventListener('abort',()=>resize.disconnect(),{once:true});
     function display() {
       const card = chapter.cards[index];
-      if (pictureUrl) URL.revokeObjectURL(pictureUrl);
-      pictureUrl = card.image ? URL.createObjectURL(activePack.assets[card.image]) : null;
+      if(stage.dataset.image!==card.image || !pictureUrl){
+        if(pictureUrl)URL.revokeObjectURL(pictureUrl);
+        pictureUrl=card.image?URL.createObjectURL(activePack.assets[card.image]):null;
+        stage.dataset.image=card.image || '';
+      }
+      slides=scienceSlides(card);
       revealOnce = false;
       updateHint();
-      stage.innerHTML = pictureUrl ? '<img src="' + pictureUrl + '" alt="' + escape(card.label) + '" draggable="false">' :
-        '<div class="word-card"><span>' + escape(card.text) + '</span></div>';
+      projector.clear();
+      if(slides.length){
+        drawScienceSlide(stage,slides[slideIndex],card.lessonTitle || card.label,(figure,box)=>projector.show(figure,activePack,card,box,pictureUrl));
+      }else if(pictureUrl){
+        const figure=document.createElement('div');stage.replaceChildren(figure);
+        projector.show(figure,activePack,card,null,pictureUrl);
+      }else stage.innerHTML = '<div class="word-card"><span>' + escape(card.text) + '</span></div>';
       fitText();
       query('#current-chapter').textContent = chapterLabel(m,chapter);
-      query('#card-count').textContent = (card.lessonTitle ? card.lessonTitle+' · Lesson ' : 'Card ')+(index+1)+' of '+chapter.cards.length;
+      query('#card-count').textContent = slides.length ? 'Slide '+(slideIndex+1)+' of '+slides.length+' · '+(slides[slideIndex].role || 'Lesson '+(index+1)) : (card.lessonTitle ? card.lessonTitle+' · Lesson ' : 'Card ')+(index+1)+' of '+chapter.cards.length;
       const previous = query('#previous-card'), next = query('#next-card');
-      const last = index === chapter.cards.length-1;
+      const last = index === chapter.cards.length-1 && slideIndex>=slides.length-1;
       const finalCard = last && chapterIndex === m.chapters.length-1;
-      previous.disabled = index === 0 && chapterIndex === 0;
-      previous.ariaLabel = previous.title = index === 0 && chapterIndex > 0 ? 'Previous chapter' : 'Previous card';
+      previous.disabled = index === 0 && chapterIndex === 0 && slideIndex===0;
+      previous.ariaLabel = previous.title = index === 0 && chapterIndex > 0 && slideIndex===0 ? 'Previous chapter' : 'Previous card';
       next.ariaLabel = next.title = finalCard ? 'Finish lesson' : last ? 'Next chapter' : 'Next card';
       next.textContent = finalCard ? '✓' : '→';
-      history.replaceState(history.state, '', '#lesson/'+materialId+'/'+chapter.id+'/'+card.id);
+      history.replaceState(history.state, '', '#lesson/'+materialId+'/'+chapter.id+'/'+card.id+(slideIndex?'?slide='+(slideIndex+1):''));
     }
     function step(direction) {
+      const nextSlide=slideIndex+direction;
+      if(nextSlide>=0 && nextSlide<slides.length){slideIndex=nextSlide;display();return;}
       const nextIndex = index+direction;
       if (nextIndex >= 0 && nextIndex < chapter.cards.length) index = nextIndex;
       else {
         const nextChapter = m.chapters[chapterIndex+direction];
         if (!nextChapter) {
-          if (direction > 0) endLesson(m,chapter,chapter.cards[index],true,display);
+          if (direction > 0) endLesson(m,chapter,chapter.cards[index],true,display,slideIndex);
           return;
         }
         chapterIndex += direction;
         chapter = nextChapter;
         index = direction > 0 ? 0 : chapter.cards.length-1;
       }
+      slideIndex=direction>0?0:Math.max(0,scienceSlides(chapter.cards[index]).length-1);
       display();
     }
     display();
@@ -349,7 +367,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
       dialog('<div class="guide-heading"><h2>Lesson options</h2><button class="btn" data-close>Close</button></div>' +
         '<div class="stack"><label>Jump to card<select id="card-picker"></select></label>' +
         '<label class="check-label"><input type="checkbox" id="keep-hints"> Always show picture hints on this device</label>' +
-        (chapter.cards[index].image ? button('enlarge-card','Enlarge card') : '') +
+        (chapter.cards[index].image ? button('enlarge-card',slides.length?'View original page':'Enlarge card') : '') +
         button('teacher-guide','Teacher’s guide & lesson plan') + button('print-lesson-resources','Lesson & assessment') + button('end-lesson','Save stopping point and results') +
         button('back-chapters','Back to chapters') +
         (saved?.cardId === chapter.cards[index].id ? '<p>Saved stopping point · '+escape(date(saved.createdAt))+'</p>' : '')+'</div>');
@@ -363,15 +381,15 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
         try { localStorage.setItem('family-learning-show-picture-hints',alwaysShow ? 'yes' : 'no'); } catch {}
         updateHint();
       };
-      picker.onchange = () => { index=Number(picker.value); closeDialog(); display(); };
+      picker.onchange = () => { index=Number(picker.value); slideIndex=0; closeDialog(); display(); };
       if (chapter.cards[index].image) document.querySelector('#enlarge-card').onclick = () => enlargeAsset(chapter.cards[index].image,chapter.cards[index].label);
       document.querySelector('#teacher-guide').onclick = teacherGuide;
       document.querySelector('#print-lesson-resources').onclick = () => showLessonResources(activePack,chapter,chapter.cards[index],{dialog,onError});
-      document.querySelector('#end-lesson').onclick = () => endLesson(m,chapter,chapter.cards[index],true,display);
+      document.querySelector('#end-lesson').onclick = () => endLesson(m,chapter,chapter.cards[index],true,display,slideIndex);
       document.querySelector('#back-chapters').onclick = () => { closeDialog(); location.hash = '#level/'+materialId; };
     });
   }
-  function endLesson(material, chapter, card, saveStop, afterSave) {
+  function endLesson(material, chapter, card, saveStop, afterSave, slideIndex=0) {
     const last = chapter.cards.at(-1).id === card.id;
     dialog('<div class="guide-heading"><h2>' + (saveStop ? 'End lesson here' : 'Chapter scores') +
       '</h2><button class="btn" data-close>Cancel</button></div><p>' + escape(chapterLabel(material,chapter)) + '</p><form id="lesson-results" class="stack">' + people().map((p, i) => {
@@ -438,7 +456,7 @@ export function createLessons({ main, getState, mutate, toast, dialog, closeDial
         if (!childIds.length) throw new Error('Select at least one child who took part.');
         if (!saveStop && !records.length) throw new Error('Enter a score, a note, or change the chapter completion checkbox.');
         if (saveStop) records.push(record('lesson_stop', {
-          materialId: material.id, chapterId: chapter.id, cardId: card.id, page: card.page, childIds
+          materialId: material.id, chapterId: chapter.id, cardId: card.id, ...(slideIndex?{slideIndex}:{}), page: card.page, childIds
         }));
         await mutate(s => { s.records.push(...records); });
         closeDialog();

@@ -5,7 +5,7 @@ let count=0;
 async function setup(handler){
  const values=new Map();globalThis.localStorage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
  globalThis.window={google:{accounts:{oauth2:{hasGrantedAllScopes:()=>true,initTokenClient:({callback})=>({requestAccessToken:()=>callback({access_token:'test-only',expires_in:3600})})}}}};
- globalThis.fetch=async(url,options)=>String(url).includes('config.json')?Response.json({googleClientId:'12345-test.apps.googleusercontent.com'}):handler(String(url),options);
+ globalThis.fetch=async(url,options)=>String(url).includes('config.json')?Response.json({googleClientId:'12345-test.apps.googleusercontent.com'}):String(url).includes('/drive/v3/about?')?Response.json({user:{emailAddress:'family@example.org'}}):handler(String(url),options);
  const drive=await import(`../docs/drive.js?test=${++count}`);await drive.prepareDrive();await drive.connectDrive();return drive;
 }
 const state=()=>({workspaceId:'family',deviceId:'test-device',records:seedRecords(),settings:{thresholdMB:20,thresholdHours:24,masteryTarget:80}});
@@ -38,7 +38,7 @@ test('selective lesson download rejects oversized files and returns bytes for va
 test('published Google configuration can be refreshed without reinstalling and invalidates a changed client session',async()=>{
  const drive=await setup(()=>{throw new Error('Connecting must not call Drive or upload records');});
  assert.equal(drive.isConnected(),true);
- let published='';globalThis.fetch=async()=>Response.json({googleClientId:published});
+ let published='';globalThis.fetch=async url=>String(url).includes('/about?')?Response.json({user:{emailAddress:'family@example.org'}}):Response.json({googleClientId:published});
  assert.equal(await drive.prepareDrive(true),false);assert.equal(drive.isConnected(),false);
  published='67890-published.apps.googleusercontent.com';
  assert.equal(await drive.prepareDrive(true),true);assert.equal(drive.configuredClientId(),published);
@@ -80,32 +80,100 @@ test('a named personal Phonics ZIP can be found without prior app backup tags', 
   await assert.rejects(drive.findLessonZip("x' or trashed = true.zip"), /Invalid/);
 });
 
-test('a private catalog download uses separate read permission without replacing the backup session', async () => {
-  const reads = [];
-  const drive = await setup((url, options) => {
-    const auth = options.headers.Authorization;
-    reads.push(auth);
-    if (new URL(url).searchParams.has('q')) {
-      return Response.json({files:auth === 'Bearer material-read' ? [{id:'private-zip'}] : []});
-    }
-    return url.includes('alt=media') ? new Response('lesson bytes') : Response.json({size:12});
-  });
-  window.google.accounts.oauth2.initTokenClient = opts => {
-    assert.equal(opts.scope,'https://www.googleapis.com/auth/drive.readonly');
-    assert.equal(opts.include_granted_scopes,false);
-    return {requestAccessToken:() => opts.callback({access_token:'material-read'})};
-  };
-  const item = {filename:'Phonics-A-Lesson-Pack.zip'};
-  assert.equal(await drive.readPrivateMaterial(item),null);
-  const blob = await drive.readPrivateMaterial(item,await drive.authorizeMaterialRead());
-  assert.equal(await blob.text(),'lesson bytes');
-  await drive.availableLessonPacks();
-  assert.deepEqual(reads,['Bearer test-only','Bearer material-read','Bearer material-read','Bearer material-read','Bearer test-only']);
+test('one account connection handles source books and backups without another prompt',async()=>{
+ const reads=[];
+ const drive=await setup((url,opts)=>{
+  reads.push(opts.headers.Authorization);
+  if(new URL(url).searchParams.has('q'))return Response.json({files:[{id:'a-private-pack'}]});
+  return url.includes('alt=media')?new Response('lesson bytes'):Response.json({size:12});
+ });
+ let prompts=0;
+ window.google.accounts.oauth2.initTokenClient=opts=>{
+  assert.match(opts.scope,/drive\.file/);assert.match(opts.scope,/drive\.readonly/);
+  return {requestAccessToken:()=>{prompts++;opts.callback({access_token:'combined',expires_in:3600});}};
+ };
+ await drive.connectDrive();
+ for(const name of ['A','B'])assert.equal(await (await drive.readPrivateMaterial({filename:name+'.zip'})).text(),'lesson bytes');
+ await drive.availableBackups();assert.equal(prompts,1);assert.ok(reads.every(t=>t==='Bearer combined'));
 });
 
-test('declining private download permission makes no file requests and keeps backup access', async () => {
-  const drive = await setup(() => assert.fail('No Google Drive files should be requested'));
-  window.google.accounts.oauth2.initTokenClient = opts => ({requestAccessToken:() => opts.callback({error:'access_denied'})});
-  await assert.rejects(drive.authorizeMaterialRead(),/access_denied/);
-  assert.equal(drive.isConnected(),true);
+test('declined consent leaves the device disconnected',async()=>{
+ const drive=await setup(()=>assert.fail('No Drive requests expected'));
+ window.google.accounts.oauth2.initTokenClient=opts=>({requestAccessToken:()=>opts.callback({error:'access_denied'})});
+ await assert.rejects(drive.connectDrive(),/not granted/);assert.equal(drive.isConnected(),false);
+});
+
+test('a family snapshot restores missing books, skips matching offline copies, and rejects changed content',async()=>{
+ const zip=new Blob(['private book bytes']);
+ const {zipDigest}=await import('../docs/pack-transfer.js');
+ let corrupted=false, media=0;
+ const drive=await setup(url=>{
+  if(url.includes('alt=media')){media++;return new Response(corrupted?'wrong book':zip);}
+  return Response.json({size:zip.size});
+ });
+ const book={id:'book-a',fileId:'drive-file',title:'Book A',sha256:await zipDigest(zip),revision:'2026-11-10T00:00:00Z'};
+ const installed=[],local=new Map();
+ const library={list:async()=>installed,install:async(blob,expected)=>{assert.equal(expected.id,book.id);local.set(book.id,blob);installed.push({id:book.id,zipHash:await zipDigest(blob)});}};
+ await drive.restoreBooks([book],library,()=>{});await drive.restoreBooks([book],library,()=>{});
+ assert.equal(media,1);assert.equal(await local.get(book.id).text(),'private book bytes');
+ installed.length=0;corrupted=true;
+ await assert.rejects(drive.restoreBooks([book],library,()=>{}),/failed verification/);
+ assert.equal(installed.length,0);
+});
+
+test('two devices sync their family’s records and book inventory with verified, reusable ZIP backups',async()=>{
+ const files=new Map();let zipUploads=0;
+ const {zipDigest}=await import('../docs/pack-transfer.js');
+ const drive=await setup(async(url,opts)=>{
+  const u=new URL(url), id=u.pathname.split('/').at(-1);
+  if(u.pathname.startsWith('/upload/')){
+   const raw=await opts.body.text(), parts=raw.split(/\r\n--family_learning_[^\r\n]+/);
+   const meta=JSON.parse(parts[0].split('\r\n\r\n')[1]), body=parts[1].split('\r\n\r\n')[1];
+   const file={...meta,id:'new-'+files.size,body,createdTime:'2026-11-10T12:00:00.000Z'};
+   if(meta.mimeType==='application/zip'){zipUploads++;file.sha256Checksum=await zipDigest(new Blob([body]));}
+   files.set(file.id,file);return Response.json({id:file.id,createdTime:file.createdTime});
+  }
+  if(opts.method==='POST'){
+   const file={...JSON.parse(opts.body),id:'folder-'+files.size};files.set(file.id,file);return Response.json(file);
+  }
+  if(u.searchParams.has('q')){
+   const q=u.searchParams.get('q');
+   const rows=[...files.values()].filter(f=>
+    (!q.includes('application/json')||f.mimeType==='application/json') &&
+    (!q.includes('google-apps.folder')||f.mimeType.includes('folder')) &&
+    (!q.includes("value='lesson-pack'")||f.appProperties.type==='lesson-pack') &&
+    (!q.includes("value='materials-folder'")||f.appProperties.type==='materials-folder'));
+   return Response.json({files:rows.map(({body,...meta})=>({...meta,size:body?.length}))});
+  }
+  const file=files.get(id);
+  if(u.searchParams.has('alt'))return new Response(file.body);
+  return Response.json({size:file.body.length,sha256Checksum:file.sha256Checksum});
+ });
+ function device(rows){
+  const local=new Map(rows);
+  return {list:async()=>[...local.keys()].map(id=>({id,title:id,subject:'Science',grade:'Other'})),
+   read:async id=>local.get(id),install:async(blob,ref)=>local.set(ref.id,blob),local};
+ }
+ const a=device([['sky',new Blob(['stars'])],['sea',new Blob(['water'])]]), b=device([]);
+ const original=state();original.records.push({kind:'profile',name:'Learner',id:'new-profile',childId:'learner',createdAt:'2026-11-10T11:00:00Z'});
+ const progress=[];const first=await drive.syncDrive(original,(...args)=>progress.push(args),a);
+ assert.equal(zipUploads,2);assert.ok(progress.some(([,n,total])=>n===0&&total>0));
+ const snapshot=await drive.downloadBackup(first.savedId);assert.equal(snapshot.books.length,2);
+ await drive.restoreBooks(snapshot.books,b,()=>{});assert.equal(await b.local.get('sky').text(),'stars');
+ b.local.set('land',new Blob(['soil']));
+ const later=await drive.syncDrive({...state(),deviceId:'tablet'},()=>{},b);
+ assert.ok(later.records.some(r=>r.id==='new-profile'));assert.equal(zipUploads,3);
+ await drive.syncDrive(original,()=>{},a);assert.equal(await a.local.get('land').text(),'soil');assert.equal(zipUploads,3);
+});
+
+test('reconnect reuses the last verified account hint; explicit switching opens the chooser',async()=>{
+ const drive=await setup(()=>assert.fail('No book transfers expected'));
+ const seen=[];
+ window.google.accounts.oauth2.initTokenClient=opts=>({requestAccessToken:request=>{
+   seen.push([opts.login_hint,request.prompt]);
+   opts.callback({access_token:'renewed',expires_in:3600});
+ }});
+ await drive.connectDrive();await drive.connectDrive({chooseAccount:true});
+ assert.deepEqual(seen,[['family@example.org',''],[undefined,'select_account']]);
+ drive.disconnectDrive();assert.equal(drive.driveAccount(),'');
 });

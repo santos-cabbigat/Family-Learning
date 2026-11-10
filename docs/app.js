@@ -1,5 +1,6 @@
 import {rowLink, screenMenu, restorePanel, activePanel, revealInvalid} from './screens.js';
 import {driveGuide} from './drive-guide.js';
+import {transferDisplay} from './pack-transfer.js';
 import {listPacks,exportPack,importPack} from './lesson-store.js';
 import {GRADES,activeStudents,currentProfiles,rosterChanges,materialGrade} from './students.js';
 import {APP_URL,REPOSITORY_URL,isOfficialWeb,compareVersions,waitForInstall} from './release.js';
@@ -7,7 +8,7 @@ import {createLessons} from './lessons.js';
 import {installationPage,beginInstall} from './install.js';
 import {VERSION,uid,record,envelope,validateBackup,mergeRecords,pendingRecords,pendingBytes,reminderDue,latestProfiles,seedRecords} from './core.js';
 import {openStore,readState,writeState,updateState} from './store.js';
-import {prepareDrive,connectDrive,isConnected,disconnectDrive,availableBackups,downloadBackup,syncDrive,configuredClientId,saveDriveClient,uploadLessonPack} from './drive.js';
+import {prepareDrive,connectDrive,isConnected,driveAccount,disconnectDrive,availableBackups,downloadBackup,syncDrive,configuredClientId,saveDriveClient,restoreBooks} from './drive.js';
 const native=Boolean(window.FamilyNative);
 const $=(s,root=document)=>root.querySelector(s), main=$('#main');
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -23,8 +24,31 @@ const lessons=createLessons({main,getState:()=>state,mutate,toast,dialog,closeDi
 function date(value){return value?new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):'Not yet';}
 function bytes(value){return value<1048576?`${Math.max(0,Math.round(value/1024))} KB`:`${(value/1048576).toFixed(1)} MB`;}
 function toast(message){$('#toast').textContent=message;$('#toast').hidden=false;clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').hidden=true,6500);}
-function dialog(html){$('#dialog-content').innerHTML=html;if(!$('#dialog').open)$('#dialog').showModal();}
-function closeDialog(){$('#dialog').close();if(!$('#editor')&&!$('#work-form'))dirty=false;}
+let modalScroll;
+function unlockPage(){
+ if($('#dialog').open || !modalScroll)return;
+ const {x,y,route}=modalScroll;
+ modalScroll=null;
+ document.documentElement.classList.remove('popup-open');
+ document.body.style.removeProperty('--popup-offset');
+ if(location.hash===route)window.scrollTo(x,y);
+}
+function dialog(html){
+ const modal=$('#dialog'), content=$('#dialog-content');
+ const body=document.createElement('div');
+ body.className='popup-scroll';body.innerHTML=html;
+ const header=body.querySelector(':scope > .guide-heading');
+ content.replaceChildren(...(header?[header]:[]),body);
+ if(!modal.open){
+  if(!modalScroll)modalScroll={x:window.scrollX,y:window.scrollY,route:location.hash};
+  document.body.style.setProperty('--popup-offset',-modalScroll.y+'px');
+  document.documentElement.classList.add('popup-open');
+  modal.showModal();
+ }
+ body.scrollTop=0;
+}
+$('#dialog').addEventListener('close',unlockPage);
+function closeDialog(){$('#dialog').close();unlockPage();if(!$('#editor')&&!$('#work-form'))dirty=false;}
 function notice(title,message){dialog(`<h2>${escape(title)}</h2><p>${escape(message)}</p><button class="btn primary" data-close>Got it</button>`);}
 function confirmAction(title,message,action){dialog(`<h2>${escape(title)}</h2><p>${escape(message)}</p><div class="actions"><button class="btn primary" id="confirm-action">Continue</button><button class="btn" data-close>Cancel</button></div>`);$('#confirm-action').onclick=async()=>{closeDialog();try{await action();}catch(e){notice('Could not complete this',e.message);}};}
 async function mutate(fn){
@@ -105,29 +129,20 @@ function workForm(id){const a=assignments().find(a=>a.id===id);if(!a)return miss
   {key:'history',label:'Learning history',node:historyList}]);
  $('#work-form').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;try{const f=new FormData(e.target);if((f.get('score')==='')!==(f.get('possible')===''))throw new Error('Enter both the earned and possible score, or leave both blank.');if(f.get('score')!==''&&Number(f.get('score'))>Number(f.get('possible')))throw new Error('The earned score cannot exceed the possible score.');const file=f.get('photo');let photo='';if(file?.size){if(file.size>10*1024*1024)throw new Error('Choose a photo smaller than 10 MB.');if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('Choose a JPEG, PNG, or WebP photo.');photo=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(new Error('The photo could not be read.'));r.readAsDataURL(file);});}await add(record('submission',{assignmentId:id,work:f.get('work'),score:f.get('score'),possible:f.get('possible'),understanding:f.get('understanding'),feedback:f.get('feedback'),photo}));dirty=false;render();toast('Work saved on this device.');checkReminder();}catch(error){notice('Could not save work',error.message);}finally{button.disabled=false;}};}
 function isSyncPage(){return ['#sync','#settings/backup'].includes(location.hash);}
-function syncPage(){const pending=pendingRecords(state.records,state.syncedIds);main.innerHTML=settingsBack()+heading('Backup and sync','Keep learning records on your devices and a recovery copy in Google Drive.')+`<div class="grid"><article class="card stack"><div class="card-head"><h2>Google Drive</h2><span class="badge">${isConnected()?'Connected':driveReady?'Ready to connect':'App owner setup needed'}</span></div><p>${state.lastSync?'Last verified backup: '+escape(date(state.lastSync)):'No verified Google Drive backup yet.'}</p>${driveError?`<div class="note" role="alert">${escape(driveError)}</div>`:''}<p class="muted">${driveReady?'Sign in, then use Sync now to combine this family’s records across devices.':'The app owner is setting up Google Drive. Use Export backup to save a copy to your device.'}</p><div class="actions">${driveReady?`<button class="btn primary" id="sync-now" ${busy?'disabled':''}>${isConnected()?'Sync now':'Connect Google Drive'}</button><button class="btn" id="restore-drive" ${busy?'disabled':''}>Restore from Drive</button>`:'<a class="btn primary" href="#settings/drive">Google Drive settings</a><button class="btn" id="retry-drive">Retry connection setup</button>'}${isConnected()?'<button class="btn" id="disconnect">Disconnect</button>':''}</div><div id="sync-progress" role="status" aria-live="polite"></div><p class="muted">Sync runs when you press Sync now. Failed uploads leave your records on this device and available to retry.</p></article><article class="card stack"><h2>Waiting for a Drive backup</h2><p>${pending.length} changes · ${bytes(pendingBytes(state.records,state.syncedIds))}</p><ul>${pendingSummary()||'<li>No new learning records waiting.</li>'}</ul><p class="muted">Only records confirmed in a verified Drive upload are marked backed up.</p></article><article class="card stack"><h2>Export or import a backup</h2><p>Includes all students’ profiles, materials you created, assignments, scores, stopping points, and settings.</p><div class="actions"><button class="btn primary" id="export">${native?'Save backup to files / Drive':'Export backup'}</button><button class="btn" id="import">Import backup</button></div><p class="muted">Last export: ${escape(date(state.lastExport))}. Save the downloaded JSON file to your Google Drive folder.</p><p class="note">Purchased workbooks and card images stay in separate lesson pack ZIPs. Import each pack once per device, or restore packs from your Drive. Exporting a file does not confirm that it reached Drive.</p></article><article class="card stack"><h2>Lesson packs in your Drive</h2><p>Back up the installed ZIP packs to the Google account you connect here. Download them one by one on a new device.</p><div class="actions"><button class="btn" id="backup-packs" ${!isConnected()||busy?'disabled':''}>Back up installed lesson packs</button><button class="btn" id="list-drive-packs">Go to Downloads</button></div><p class="muted">Connect Google Drive first. The app creates its own materials folder automatically. Each household uses its own Drive; sharing this website does not share anyone’s records or purchased books.</p><div id="pack-drive-status" role="status"></div><div id="drive-pack-list" class="stack"></div></article><article class="card stack"><h2>Use another device</h2><ol><li>Open the same <a href="${APP_URL}">GitHub website</a>.</li><li>Import your JSON backup, or connect Google Drive and choose Restore from Drive before entering new records. Use your own household’s Google account.</li><li>Download your lesson packs from Drive below, or import their ZIP files.</li><li>Use Sync now to combine later work, or export/import updated JSON backups.</li></ol></article></div>`;
+function syncPage(){const pending=pendingRecords(state.records,state.syncedIds);main.innerHTML=settingsBack()+heading('Backup and sync','Save student progress and offline books in your family’s Google Drive.')+`<div class="grid"><article class="card stack"><div class="card-head"><h2>Google Drive</h2><span class="badge">${isConnected()?'Connected':driveReady?'Ready to connect':'App owner setup needed'}</span></div><p>${state.lastSync?'Last verified backup: '+escape(date(state.lastSync)):'No verified Google Drive backup yet.'}</p>${driveError?`<div class="note" role="alert">${escape(driveError)}</div>`:''}<p class="muted">${driveReady?'Connect the account that holds your books. Google asks to read Drive files and to save backups created by Family Learning.':'The app owner is setting up Google Drive. Use Export backup to save a copy to your device.'}</p><div class="actions">${driveReady?`<button class="btn primary" id="sync-now" ${busy?'disabled':''}>${isConnected()?'Sync now':'Connect Google Drive'}</button><button class="btn" id="restore-drive" ${busy?'disabled':''}>Restore from Drive</button>`:'<a class="btn primary" href="#settings/drive">Google Drive settings</a><button class="btn" id="retry-drive">Retry connection setup</button>'}${isConnected()?'<button class="btn" id="disconnect">Disconnect</button>':''}</div><progress class="download-progress" id="sync-bar" aria-label="Drive transfer" hidden></progress><div id="sync-progress" role="status" aria-live="polite"></div><p class="muted">Sync runs when you press Sync now. Failed uploads leave your records on this device and available to retry.</p></article><article class="card stack"><h2>Waiting for a Drive backup</h2><p>${pending.length} changes · ${bytes(pendingBytes(state.records,state.syncedIds))}</p><ul>${pendingSummary()||'<li>No new learning records waiting.</li>'}</ul><p class="muted">Only records confirmed in a verified Drive upload are marked backed up.</p></article><article class="card stack"><h2>Export or import a backup</h2><p>Includes all students’ profiles, materials you created, assignments, scores, stopping points, and settings.</p><div class="actions"><button class="btn primary" id="export">${native?'Save backup to files / Drive':'Export backup'}</button><button class="btn" id="import">Import backup</button></div><p class="muted">Last export: ${escape(date(state.lastExport))}. Save the downloaded JSON file to your Google Drive folder.</p><p class="note">Purchased workbooks and card images stay in separate lesson pack ZIPs. Use Sync now to include books in your Drive recovery copy. Exporting a file does not confirm that it reached Drive.</p></article><article class="card stack"><h2>Lesson packs in your Drive</h2><p>Sync now saves installed lesson packs in your Drive. Restore from Drive installs the books included in the selected family backup.</p><div class="actions"><button class="btn" id="list-drive-packs">Go to Downloads</button></div><p class="muted">Connect Google Drive first. The app creates its own materials folder automatically. Each household uses its own Drive; sharing this website does not share anyone’s records or purchased books.</p><div id="pack-drive-status" role="status"></div><div id="drive-pack-list" class="stack"></div></article><article class="card stack"><h2>Use another device</h2><ol><li>Open the same <a href="${APP_URL}">GitHub website</a>.</li><li>Import your JSON backup, or connect Google Drive and choose Restore from Drive before entering new records. Use your own household’s Google account.</li><li>Choose a recovery copy. Its saved books install automatically for offline use.</li><li>Use Sync now to combine later work, or export/import updated JSON backups.</li></ol></article></div>`;
  const syncBody=main.querySelector(':scope > .grid');
  const syncCards=Array.from(syncBody.children);
  syncBody.className='stack';
  screenMenu(syncBody,syncCards.map((node,i)=>({key:['sync','pending','files','packs','device'][i],label:node.querySelector('h2').textContent,node})));
- if($('#sync-now'))$('#sync-now').onclick=()=>runDrive(false);if($('#restore-drive'))$('#restore-drive').onclick=()=>runDrive(true);if($('#retry-drive'))$('#retry-drive').onclick=async()=>{const b=$('#retry-drive');b.disabled=true;b.textContent='Checking…';await refreshDrive();};$('#backup-packs').onclick=backupInstalledPacks;$('#list-drive-packs').onclick=()=>{location.hash='downloads';};$('#export').onclick=exportBackup;$('#import').onclick=importBackup;if($('#disconnect'))$('#disconnect').onclick=()=>{disconnectDrive();render();};}
+ if($('#sync-now'))$('#sync-now').onclick=()=>runDrive(false);if($('#restore-drive'))$('#restore-drive').onclick=()=>runDrive(true);if($('#retry-drive'))$('#retry-drive').onclick=async()=>{const b=$('#retry-drive');b.disabled=true;b.textContent='Checking…';await refreshDrive();};$('#list-drive-packs').onclick=()=>{location.hash='downloads';};$('#export').onclick=exportBackup;$('#import').onclick=importBackup;if($('#disconnect'))$('#disconnect').onclick=()=>{if(!busy){disconnectDrive();render();}};}
 
-async function backupInstalledPacks() {
- if(busy) return;
- const out=$('#pack-drive-status'), button=$('#backup-packs');
- const report=message=>{if(out?.isConnected)out.textContent=message;};
- busy=true;
- button.disabled=true;
- try {
-  if(!isConnected())throw new Error('Connect your Drive account first.');
-  const packs=await listPacks();
-  if(!packs.length)throw new Error('Get a material in Downloads first.');
-  for(const manifest of packs){
-    await uploadLessonPack({...manifest,grade:materialGrade(state.records,manifest)},await exportPack(manifest.id),report);
-  }
-  report(packs.length+' lesson pack(s) verified in your Drive.');
- }catch(error){report(error.message);}
- finally{busy=false;if(button.isConnected)button.disabled=!isConnected();}
+const bookLibrary={
+ list:async()=> (await listPacks()).map(m=>({...m,grade:materialGrade(state.records,m)})),
+ read:exportPack, install:importPack
+};
+function driveProgress(label,n,total){
+ const bar=$('#sync-bar'), out=$('#sync-progress');
+ if(bar && out)transferDisplay(bar,out,label,n,total);
 }
 function studentSettings(){
  const host=$('#student-settings');if($('#active-student-count'))$('#active-student-count').textContent=profiles().length+' active students';let rows=profiles().map(p=>({childId:p.childId,name:p.name,grade:p.grade||'Kindergarten'}));
@@ -177,7 +192,7 @@ async function connectFamilyDrive(event) {
  try {
   if (!navigator.onLine) throw new Error('Connect to the internet and try again.');
   // Request consent directly during the tap so mobile browsers can open the account chooser.
-  await connectDrive();
+  await connectDrive({chooseAccount:isConnected() || location.hash==='#settings/drive'});
   driveError = '';
   toast('Google Drive connected.');
  } catch (error) {
@@ -200,7 +215,7 @@ function driveSettings() {
  let message = 'Google Drive is waiting for the app owner to finish setup. Your family can keep using this device.';
  if (!navigator.onLine) message = 'Connect to the internet to use Google Drive.';
  else if (configuredClientId() && !ready) message = 'Google sign-in could not load. Check your internet connection and try again.';
- else if (ready) message = connected ? 'Open Backup and restore to save or recover your family’s records.' : 'Choose your Google account and allow Family Learning to save backups in your Drive.';
+ else if (ready) message = connected ? 'Connected to '+escape(driveAccount())+'. Open Backup and restore to save or recover your family’s records and books.' : 'Choose your Google account and allow Family Learning to find and download your lesson packs and save backups in your Drive.';
  panel.innerHTML = `<p>${message}</p>
   ${driveError ? `<p class="note" role="alert">${escape(driveError)}</p>` : ''}
   ${ready ? `<button class="btn primary" type="button" id="settings-connect-drive">${connected ? 'Choose another Google account' : 'Connect Google Drive'}</button>` : '<button class="btn" type="button" id="retry-family-drive">Check Google Drive connection</button>'}
@@ -270,8 +285,71 @@ function settings(section){
 function updateOfflineStatus(){const out=$('#offline-status');if(out)out.textContent=native?'This app is bundled on your device for offline use.':registration?.active?'Ready for offline use in this browser. Saved work stays on this device.':'Offline startup is not confirmed yet. Open the app online and check again.';}
 async function exportBackup(){try{await writeQueue;state=await readState();const data=envelope(state.workspaceId,state.records,state.deviceId,state.settings);validateBackup(data);if(native){window.FamilyNative.saveBackup(JSON.stringify(data),`Family-Learning-${new Date().toISOString().slice(0,10)}.json`);return;}const blob=new Blob([JSON.stringify(data)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`Family-Learning-${new Date().toISOString().slice(0,10)}.json`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);await mutate(s=>s.lastExport=new Date().toISOString());toast('Backup download started. Save that file to Drive for recovery.');render();}catch(error){notice('Export did not complete',error.message);}}
 function importBackup(){if(native){window.FamilyNative.openBackup();return;}const input=document.createElement('input');input.type='file';input.accept='.json,application/json';input.hidden=true;document.body.append(input);input.addEventListener('cancel',()=>input.remove(),{once:true});input.onchange=async()=>{const file=input.files[0];input.remove();try{if(!file)return;if(file.size>100*1024*1024)throw new Error('This version supports recovery files up to 100 MB.');const data=validateBackup(JSON.parse(await file.text()));previewRestore(data,false);}catch(error){notice('Backup not imported',error.message);}};input.click();}
-function previewRestore(data,fromDrive){const hasOwnWork=state.records.some(r=>!r.seed),same=data.workspaceId===state.workspaceId;if(!same&&hasOwnWork)return notice('Different family backup','This device already has work from another family space. Export its backup first, then restore into a fresh browser profile or device. Nothing was replaced.');confirmAction('Restore this backup?',`${data.records.length} records from ${date(data.exportedAt)}. ${same?'Existing work will be kept and matching records combined.':'This will open the saved family space on this device.'}`,async()=>{await mutate(s=>{if(s.workspaceId!==data.workspaceId&&s.records.some(r=>!r.seed))throw new Error('This device changed while the backup was open. Nothing was replaced.');s.records=same?mergeRecords(s.records,data.records):data.records;if(data.settings)s.settings={...s.settings,...data.settings};s.workspaceId=data.workspaceId;if(!same)s.syncedIds=[];if(fromDrive){s.syncedIds=[...new Set([...s.syncedIds,...data.records.map(r=>r.id)])];s.lastSync=new Date().toISOString();}});location.hash='learners';render();toast('Recovery copy restored.');});}
-async function runDrive(restore){if(busy)return;if(!driveReady){location.hash='settings/drive';return;}busy=true;try{if(!navigator.onLine)throw new Error('Connect to the internet before syncing. Your records are still saved on this device.');if(!isConnected()){await connectDrive();toast('Google Drive connected.');}if(restore){const files=await availableBackups();if(!files.length)return notice('No backups found','This account has no Family Learning backups available to this app. You can also import a previously exported file.');dialog(`<h2>Choose a recovery copy</h2><div class="stack">${files.slice(0,30).map(f=>`<button class="btn" data-restore-id="${escape(f.id)}">${escape(date(f.createdTime))}</button>`).join('')}<button class="btn" data-close>Cancel</button></div>`);document.querySelectorAll('[data-restore-id]').forEach(b=>b.onclick=async()=>{b.disabled=true;try{previewRestore(await downloadBackup(b.dataset.restoreId),true);}catch(e){notice('Could not restore',e.message);}});return;}const progress=text=>{if($('#sync-progress'))$('#sync-progress').textContent=text;};await writeQueue;state=await readState();const syncWorkspace=state.workspaceId;const result=await syncDrive(structuredClone(state),progress);await mutate(s=>{if(s.workspaceId!==syncWorkspace)throw new Error('The family space changed during sync. The uploaded backup is safe; reconnect to sync this space.');s.records=mergeRecords(s.records,result.records);s.syncedIds=[...new Set([...s.syncedIds,...result.syncedIds])];s.lastSync=result.at;});render();toast('Saved to Google Drive and verified.');}catch(error){notice('Sync did not complete',error.message);}finally{busy=false;if(isSyncPage())syncPage();}}
+function previewRestore(data,fromDrive){
+ const same=data.workspaceId===state.workspaceId;
+ if(!same && state.records.some(r=>!r.seed)){
+  return notice('Different family backup','This device already has work from another family space. Restore into a fresh browser profile or device.');
+ }
+ const counts=data.records.length+' records'+(fromDrive?' and '+(data.books?.length || 0)+' books':'');
+ const message=counts+' from '+date(data.exportedAt)+'. '+(same?'Existing records will be combined.':'This opens the saved family on this device.');
+ confirmAction('Restore this backup?',message,async()=>{
+  if(busy)return;
+  busy=true;
+  try{
+   await mutate(s=>{
+    const matching=s.workspaceId===data.workspaceId;
+    if(!matching && s.records.some(r=>!r.seed))throw new Error('The family space changed while the backup was open.');
+    s.records=matching?mergeRecords(s.records,data.records):data.records;
+    if(data.settings)s.settings={...s.settings,...data.settings};
+    s.workspaceId=data.workspaceId;
+    if(!matching)s.syncedIds=[];
+    if(fromDrive)s.syncedIds=[...new Set([...s.syncedIds,...data.records.map(r=>r.id)])];
+   });
+   if(fromDrive){
+    try{await restoreBooks(data.books,bookLibrary,driveProgress);}
+    catch(error){throw new Error('Family records restored. To finish installing the books, choose Restore from Drive again. '+error.message);}
+    await mutate(s=>{if(s.workspaceId===data.workspaceId)s.lastSync=new Date().toISOString();});
+   }
+   location.hash='learners';render();toast('Recovery copy restored.');
+  }finally{busy=false;if(isSyncPage())syncPage();}
+ });
+}
+async function runDrive(restore){
+ if(busy)return;
+ if(!driveReady){location.hash='settings/drive';return;}
+ busy=true;
+ try{
+  if(!navigator.onLine)throw new Error('Connect to the internet before syncing.');
+  if(!isConnected())await connectDrive();
+  if(restore){
+   const files=await availableBackups();
+   if(!files.length)return notice('No backups found','This Google account has no Family Learning backups yet.');
+   dialog('<h2>Choose a recovery copy</h2><div class="stack">'+files.slice(0,30).map(f=>
+    '<button class="btn" data-restore-id="'+escape(f.id)+'">'+escape(date(f.createdTime))+'</button>'
+   ).join('')+'<button class="btn" data-close>Cancel</button></div>');
+   document.querySelectorAll('[data-restore-id]').forEach(button=>button.onclick=async()=>{
+    if(busy)return;
+    busy=true;closeDialog();
+    try{
+     const file=files.find(f=>f.id===button.dataset.restoreId);
+     previewRestore(await downloadBackup(file.id,driveProgress,file.size),true);
+    }catch(error){notice('Could not restore',error.message);}
+    finally{busy=false;}
+   });
+   return;
+  }
+  await writeQueue;state=await readState();
+  const workspace=state.workspaceId;
+  const result=await syncDrive(structuredClone(state),driveProgress,bookLibrary);
+  await mutate(s=>{
+   if(s.workspaceId!==workspace)throw new Error('The family space changed during sync. The uploaded backup is safe.');
+   s.records=mergeRecords(s.records,result.records);
+   s.syncedIds=[...new Set([...s.syncedIds,...result.syncedIds])];s.lastSync=result.at;
+  });
+  render();toast('Saved to Google Drive and verified.');
+ }catch(error){notice('Sync did not complete',error.message);}
+ finally{busy=false;if(isSyncPage())syncPage();}
+}
 async function checkUpdate(){
  if(native){window.FamilyNative.openUpdates();return;}
  const button=$('#check-update'),output=$('#update-state');button.disabled=true;output.textContent='Checking GitHub for an update…';

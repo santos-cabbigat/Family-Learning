@@ -11,7 +11,7 @@ for (const size of [0,5]) {
     }});
     const reports = [];
     const file = await readPackResponse(new Response(body),(read,total)=>reports.push([read,total]),size);
-    assert.deepEqual(reports,[[2,size],[5,size]]);
+    assert.deepEqual(reports,[[0,size],[2,size],[5,size]]);
     assert.deepEqual(new Uint8Array(await file.arrayBuffer()),Uint8Array.of(1,2,3,4,5));
   });
 }

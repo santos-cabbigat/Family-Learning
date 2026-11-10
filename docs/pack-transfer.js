@@ -5,6 +5,7 @@ export async function readPackResponse(response, report, sizeHint) {
   const total = Number(sizeHint) || Number(response.headers.get('content-length')) || 0;
   const tooLarge = () => new Error('This lesson pack exceeds the 100 MB limit.');
   if (total > limit) throw tooLarge();
+  report?.(0,total);
   if (!response.body?.getReader) {
     const blob = await response.blob();
     if (blob.size > limit) throw tooLarge();
@@ -25,4 +26,20 @@ export async function readPackResponse(response, report, sizeHint) {
     }
     return new Blob(chunks,{type:'application/zip'});
   } finally { reader.releaseLock(); }
+}
+
+export async function zipDigest(blob) {
+  const bytes = new Uint8Array(await crypto.subtle.digest('SHA-256', await blob.arrayBuffer()));
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export function transferDisplay(bar, output, label, done, total) {
+  bar.hidden = false;
+  if (Number.isFinite(done) && total > 0) {
+    bar.max = total;
+    bar.value = Math.min(done, total);
+  } else bar.removeAttribute('value');
+  const mb = value => (value / 1000000).toFixed(1);
+  output.textContent = label + (Number.isFinite(done) ?
+    ' · ' + mb(done) + (total > 0 ? ' MB of ' + mb(total) : '') + ' MB' : '');
 }
