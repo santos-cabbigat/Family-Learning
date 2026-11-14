@@ -1,4 +1,4 @@
-const CACHE='family-learning-0.8.1-family-portfolios';
+const CACHE='family-learning-0.8.2-live-launcher';
 const BASE=new URL('./',self.location).pathname;
 const ASSETS=['','index.html','style.css','screens.css','screens.js','app.js','teacher-desk.js','evidence.js','evidence-store.js','scan-image.js','scan-edges.js','download-job.js','vendor/scan/jspdf.umd.min.js','core.js','store.js','drive.js','drive-guide.js','install.js','manifest.webmanifest','icon.svg','icon-192.png','icon-512.png','config.json','release.js','students.js','lessons.js','science-slides.js','science-regions.js','science-prompts.js','book-regions.js','scan-detail.js','projector.js','vendor/pdfjs/pdf.min.mjs','vendor/pdfjs/pdf.worker.min.mjs','teaching-plan.js','lesson-resources.js','picture-hints.js','hints-a.json','hints-b.json','learning-core.js','lesson-store.js','package-catalog.js','pack-transfer.js','lessons.css','vendor/fflate.js'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(ASSETS.map(p=>new Request(BASE+p,{cache:"reload"}))))));
